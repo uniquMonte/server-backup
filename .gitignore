@@ -1,0 +1,26 @@
+# Backup configuration
+*.env
+vps-backup.env
+
+# Backup files
+*.tar.gz
+*.tar.gz.enc
+*.sha256
+
+# Log files
+*.log
+
+# Temporary files
+/tmp/
+*.tmp
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
