@@ -45,6 +45,28 @@ is_configured() {
     [ -f "$BACKUP_ENV" ] && [ -f "$BACKUP_SCRIPT" ]
 }
 
+# Get current logrotate configuration
+get_logrotate_config() {
+    local logrotate_conf="/etc/logrotate.d/vps-backup"
+
+    if [ ! -f "$logrotate_conf" ]; then
+        echo "Not configured"
+        return 1
+    fi
+
+    # Parse size and rotate parameters
+    local size=$(grep "^\s*size" "$logrotate_conf" | awk '{print $2}')
+    local days=$(grep "^\s*rotate" "$logrotate_conf" | awk '{print $2}')
+
+    if [ -n "$size" ] && [ -n "$days" ]; then
+        echo "${size} / ${days} days"
+        return 0
+    else
+        echo "Configured"
+        return 0
+    fi
+}
+
 # Load configuration
 load_config() {
     if [ -f "$BACKUP_ENV" ]; then
@@ -182,6 +204,15 @@ show_status() {
         echo -e "  Backup Script:     ${CYAN}${BACKUP_SCRIPT}${NC}"
         echo -e "  Config File:       ${CYAN}${BACKUP_ENV}${NC}"
         echo -e "  Log File:          ${CYAN}${BACKUP_LOG_FILE:-$DEFAULT_LOG_FILE}${NC}"
+
+        # Log rotation status
+        local logrotate_status=$(get_logrotate_config)
+        if [ "$logrotate_status" = "Not configured" ]; then
+            echo -e "  Log Rotation:      ${YELLOW}${logrotate_status}${NC}"
+        else
+            echo -e "  Log Rotation:      ${GREEN}${logrotate_status}${NC}"
+        fi
+
         echo -e "  Temp Directory:    ${CYAN}${BACKUP_TMP_DIR:-$DEFAULT_TMP_DIR}${NC}"
 
         # Check if rclone remote is configured
@@ -375,12 +406,12 @@ configure_backup() {
 
     # Step 1: Configure backup sources
     echo ""
-    log_info "Step 1/7: Configure Backup Sources"
+    log_info "Step 1/8: Configure Backup Sources"
     configure_backup_sources || return 1
 
     # Step 2: Configure remote directory
     echo ""
-    log_info "Step 2/7: Configure Remote Storage"
+    log_info "Step 2/8: Configure Remote Storage"
     echo ""
 
     # First, configure hostname identifier for this VPS
@@ -600,7 +631,7 @@ configure_backup() {
 
     # Step 3: Setup rclone if needed
     echo ""
-    log_info "Step 3/7: Configure Rclone"
+    log_info "Step 3/8: Configure Rclone"
     local remote_name=$(echo "$BACKUP_REMOTE_DIR" | cut -d':' -f1)
     if command -v rclone &> /dev/null; then
         if rclone listremotes | grep -q "^${remote_name}:$"; then
@@ -622,7 +653,7 @@ configure_backup() {
 
     # Step 4: Configure encryption password
     echo ""
-    log_info "Step 4/7: Configure Encryption"
+    log_info "Step 4/8: Configure Encryption"
     echo ""
     if [ -n "$BACKUP_PASSWORD" ]; then
         echo -e "Current password: ${CYAN}${BACKUP_PASSWORD:0:3}***${NC}"
@@ -652,7 +683,7 @@ configure_backup() {
 
     # Step 5: Configure Telegram notifications (recommended)
     echo ""
-    log_info "Step 5/7: Configure Telegram Notifications (Recommended)"
+    log_info "Step 5/8: Configure Telegram Notifications (Recommended)"
     echo ""
     read -p "Enable Telegram notifications? [Y/n] (press Enter to enable): " enable_tg
     if [[ ! $enable_tg =~ ^[Nn]$ ]]; then
@@ -677,7 +708,7 @@ configure_backup() {
 
     # Step 6: Other settings
     echo ""
-    log_info "Step 6/7: Additional Settings"
+    log_info "Step 6/8: Additional Settings"
     echo ""
 
     read -p "Max backups to keep [${BACKUP_MAX_KEEP:-3}] (press Enter for default): " max_keep
@@ -697,9 +728,42 @@ configure_backup() {
     # Create backup script
     create_backup_script
 
-    # Step 7: Configure automatic backup schedule
+    # Step 7: Configure log rotation
     echo ""
-    log_info "Step 7/7: Setup Automatic Backup Schedule"
+    log_info "Step 7/8: Configure Log Rotation"
+    echo ""
+    echo -e "${GREEN}Configure automatic log rotation to prevent disk space issues${NC}"
+    echo ""
+    echo -e "${CYAN}Recommended settings:${NC}"
+    echo -e "  • Max log size: ${GREEN}10MB${NC} (rotate when file reaches this size)"
+    echo -e "  • Keep logs: ${GREEN}7 days${NC} (older logs will be deleted)"
+    echo ""
+    read -p "Use default settings? [Y/n] (press Enter for defaults): " use_log_defaults
+
+    local log_max_size="10M"
+    local log_keep_days="7"
+
+    if [[ $use_log_defaults =~ ^[Nn]$ ]]; then
+        echo ""
+        echo -e "${CYAN}Custom log rotation settings:${NC}"
+        echo ""
+        read -p "Max log file size (e.g., 10M, 50M, 100M) [10M]: " custom_size
+        log_max_size="${custom_size:-10M}"
+
+        read -p "Number of days to keep logs [7]: " custom_days
+        log_keep_days="${custom_days:-7}"
+
+        echo ""
+        log_info "Custom settings: Max size ${log_max_size}, Keep ${log_keep_days} days"
+    else
+        log_info "Using default settings: Max size 10MB, Keep 7 days"
+    fi
+
+    setup_logrotate "$log_max_size" "$log_keep_days"
+
+    # Step 8: Configure automatic backup schedule
+    echo ""
+    log_info "Step 8/8: Setup Automatic Backup Schedule"
     echo ""
     echo -e "${GREEN}Would you like to enable automatic backups?${NC}"
     echo ""
@@ -1053,6 +1117,50 @@ EOFSCRIPT
     log_success "Backup script created at $BACKUP_SCRIPT"
 }
 
+# Setup logrotate for backup logs
+setup_logrotate() {
+    local log_file="${BACKUP_LOG_FILE:-$DEFAULT_LOG_FILE}"
+    local logrotate_conf="/etc/logrotate.d/vps-backup"
+    local max_size="${1:-10M}"
+    local keep_days="${2:-7}"
+
+    echo ""
+    log_info "Setting up log rotation..."
+
+    # Create logrotate configuration
+    cat > "$logrotate_conf" << EOF
+# VPS Backup log rotation configuration
+$log_file {
+    # Rotate daily or when size reaches $max_size
+    daily
+    size $max_size
+    # Keep $keep_days days of logs
+    rotate $keep_days
+    # Compress old logs
+    compress
+    # Delay compression until next rotation
+    delaycompress
+    # Don't error if log file is missing
+    missingok
+    # Don't rotate if log is empty
+    notifempty
+    # Create new log with these permissions
+    create 0640 root root
+    # Use date as suffix for rotated files
+    dateext
+    dateformat -%Y%m%d
+}
+EOF
+
+    if [ $? -eq 0 ]; then
+        log_success "Logrotate configured at $logrotate_conf"
+        log_info "Logs will be rotated daily or when reaching $max_size"
+        log_info "Logs will be kept for $keep_days days and compressed"
+    else
+        log_warning "Failed to create logrotate configuration"
+    fi
+}
+
 # Test configuration
 test_configuration() {
     echo ""
@@ -1385,10 +1493,11 @@ edit_configuration() {
         echo -e "  ${CYAN}7.${NC} Log and temp paths"
         echo -e "  ${CYAN}8.${NC} View current configuration"
         echo -e "  ${CYAN}9.${NC} Setup/modify backup schedule (cron)"
+        echo -e "  ${CYAN}10.${NC} Configure log rotation"
         echo -e "  ${CYAN}r.${NC} Regenerate backup script"
         echo -e "  ${CYAN}0.${NC} Return to main menu (default)"
         echo ""
-        read -p "Select option [0-9,r] (press Enter to return): " edit_choice
+        read -p "Select option [0-10,r] (press Enter to return): " edit_choice
         edit_choice="${edit_choice:-0}"  # Default to option 0 (return to main menu)
 
         case $edit_choice in
@@ -1633,6 +1742,49 @@ edit_configuration() {
                 setup_cron
                 ;;
 
+            10)
+                # Configure log rotation
+                echo ""
+                echo -e "${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+                echo -e "${CYAN}Configure Log Rotation${NC}"
+                echo -e "${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+                echo ""
+
+                # Get current configuration
+                local logrotate_conf="/etc/logrotate.d/vps-backup"
+                if [ -f "$logrotate_conf" ]; then
+                    local current_size=$(grep "^\s*size" "$logrotate_conf" | awk '{print $2}')
+                    local current_days=$(grep "^\s*rotate" "$logrotate_conf" | awk '{print $2}')
+
+                    echo -e "${GREEN}Current configuration:${NC}"
+                    echo -e "  Max log size: ${CYAN}${current_size:-Not set}${NC}"
+                    echo -e "  Keep logs:    ${CYAN}${current_days:-Not set} days${NC}"
+                else
+                    echo -e "${YELLOW}Log rotation is not configured yet${NC}"
+                    local current_size="10M"
+                    local current_days="7"
+                fi
+
+                echo ""
+                echo -e "${CYAN}Recommended settings:${NC}"
+                echo -e "  • Max log size: ${GREEN}10MB${NC} (rotate when file reaches this size)"
+                echo -e "  • Keep logs: ${GREEN}7 days${NC} (older logs will be deleted)"
+                echo ""
+
+                read -p "Max log file size (e.g., 10M, 50M, 100M) [${current_size:-10M}]: " new_size
+                new_size="${new_size:-${current_size:-10M}}"
+
+                read -p "Number of days to keep logs [${current_days:-7}]: " new_days
+                new_days="${new_days:-${current_days:-7}}"
+
+                echo ""
+                log_info "Updating log rotation configuration..."
+                setup_logrotate "$new_size" "$new_days"
+
+                echo ""
+                read -p "Press Enter to continue..."
+                ;;
+
             r|R)
                 # Regenerate backup script
                 echo ""
@@ -1685,6 +1837,7 @@ uninstall_backup() {
     echo -e "  • Manager script: ${CYAN}/usr/local/bin/backup_manager.sh${NC}"
     echo -e "  • Restore script: ${CYAN}/usr/local/bin/backup_restore.sh${NC}"
     echo -e "  • Cron jobs for automated backups"
+    echo -e "  • Logrotate configuration: ${CYAN}/etc/logrotate.d/vps-backup${NC}"
 
     # Check if log file exists and show it
     local log_file_path=""
@@ -1743,6 +1896,12 @@ uninstall_backup() {
     if [ -n "$log_file_path" ] && [ -f "$log_file_path" ]; then
         rm -f "$log_file_path"
         log_success "Log file removed: $log_file_path"
+    fi
+
+    # Remove logrotate configuration
+    if [ -f "/etc/logrotate.d/vps-backup" ]; then
+        rm -f "/etc/logrotate.d/vps-backup"
+        log_success "Logrotate configuration removed"
     fi
 
     # Remove manager script itself (last step)
