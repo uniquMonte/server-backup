@@ -1546,6 +1546,22 @@ main() {
         install-deps)
             install_rclone
             ;;
+        regenerate)
+            # Regenerate backup script with latest code
+            if ! is_configured; then
+                log_error "Backup is not configured"
+                log_info "Please run configuration wizard first"
+                return 1
+            fi
+
+            load_config
+            echo ""
+            log_info "Regenerating backup script with latest translations..."
+            create_backup_script
+            echo ""
+            log_success "Backup script regenerated successfully!"
+            log_info "All messages are now in English"
+            ;;
         restore)
             # Launch restore tool
             if [ -f "${SCRIPTS_PATH}/backup_restore.sh" ]; then
@@ -1616,7 +1632,7 @@ main() {
             ;;
         *)
             log_error "Unknown command: $1"
-            echo "Usage: $0 {status|configure|edit|run|restore|list|logs|test|cron|menu}"
+            echo "Usage: $0 {status|configure|edit|run|restore|list|logs|test|cron|regenerate|menu}"
             echo ""
             echo "Commands:"
             echo "  status     - Show backup configuration status"
@@ -1628,6 +1644,7 @@ main() {
             echo "  logs       - View backup logs"
             echo "  test       - Test backup configuration"
             echo "  cron       - Setup automatic backup schedule"
+            echo "  regenerate - Regenerate backup script (updates translations)"
             echo "  menu       - Interactive menu (default)"
             exit 1
             ;;
