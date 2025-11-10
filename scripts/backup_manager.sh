@@ -1254,10 +1254,11 @@ edit_configuration() {
         echo -e "  ${CYAN}7.${NC} Log and temp paths"
         echo -e "  ${CYAN}8.${NC} View current configuration"
         echo -e "  ${CYAN}9.${NC} Setup/modify backup schedule (cron)"
-        echo -e "  ${CYAN}r.${NC} Regenerate backup script (apply latest translations)"
-        echo -e "  ${CYAN}0.${NC} Return to main menu"
+        echo -e "  ${CYAN}r.${NC} Regenerate backup script"
+        echo -e "  ${CYAN}0.${NC} Return to main menu (default)"
         echo ""
-        read -p "Select option [0-9,r]: " edit_choice
+        read -p "Select option [0-9,r] (press Enter to return): " edit_choice
+        edit_choice="${edit_choice:-0}"  # Default to option 0 (return to main menu)
 
         case $edit_choice in
             1)
@@ -1511,10 +1512,9 @@ edit_configuration() {
                 log_info "This will regenerate the backup script based on your current configuration"
                 echo ""
                 echo -e "${GREEN}What this does:${NC}"
-                echo -e "  • Applies latest code updates and translations"
+                echo -e "  • Applies latest code updates from manager script"
                 echo -e "  • Uses your current configuration from: ${CYAN}${BACKUP_ENV}${NC}"
                 echo -e "  • Generates new script at: ${CYAN}${BACKUP_SCRIPT}${NC}"
-                echo -e "  • All output messages will be in English"
                 echo ""
                 read -p "Continue? [Y/n] (press Enter to continue): " confirm
 
@@ -1525,7 +1525,6 @@ edit_configuration() {
                     echo ""
                     log_success "Backup script regenerated successfully!"
                     log_info "Script location: ${BACKUP_SCRIPT}"
-                    log_info "You can now run backups with updated translations"
                 else
                     log_info "Regeneration cancelled"
                 fi
@@ -1599,12 +1598,11 @@ main() {
             echo -e "  Config file: ${CYAN}${BACKUP_ENV}${NC}"
             echo -e "  Script path: ${CYAN}${BACKUP_SCRIPT}${NC}"
             echo ""
-            log_info "Regenerating backup script with latest code and translations..."
+            log_info "Regenerating backup script with latest code..."
             create_backup_script
             echo ""
             log_success "Backup script regenerated successfully!"
             log_info "Script location: ${BACKUP_SCRIPT}"
-            log_info "All messages are now in English"
             ;;
         restore)
             # Launch restore tool
