@@ -341,12 +341,12 @@ configure_backup() {
 
     # Step 1: Configure backup sources
     echo ""
-    log_info "Step 1/6: Configure Backup Sources"
+    log_info "Step 1/7: Configure Backup Sources"
     configure_backup_sources || return 1
 
     # Step 2: Configure remote directory
     echo ""
-    log_info "Step 2/6: Configure Remote Storage"
+    log_info "Step 2/7: Configure Remote Storage"
     echo ""
 
     # First, configure hostname identifier for this VPS
@@ -566,7 +566,7 @@ configure_backup() {
 
     # Step 3: Setup rclone if needed
     echo ""
-    log_info "Step 3/6: Configure Rclone"
+    log_info "Step 3/7: Configure Rclone"
     local remote_name=$(echo "$BACKUP_REMOTE_DIR" | cut -d':' -f1)
     if command -v rclone &> /dev/null; then
         if rclone listremotes | grep -q "^${remote_name}:$"; then
@@ -588,7 +588,7 @@ configure_backup() {
 
     # Step 4: Configure encryption password
     echo ""
-    log_info "Step 4/6: Configure Encryption"
+    log_info "Step 4/7: Configure Encryption"
     echo ""
     if [ -n "$BACKUP_PASSWORD" ]; then
         echo -e "Current password: ${CYAN}${BACKUP_PASSWORD:0:3}***${NC}"
@@ -618,7 +618,7 @@ configure_backup() {
 
     # Step 5: Configure Telegram notifications (recommended)
     echo ""
-    log_info "Step 5/6: Configure Telegram Notifications (Recommended)"
+    log_info "Step 5/7: Configure Telegram Notifications (Recommended)"
     echo ""
     read -p "Enable Telegram notifications? [Y/n] (press Enter to enable): " enable_tg
     if [[ ! $enable_tg =~ ^[Nn]$ ]]; then
@@ -643,7 +643,7 @@ configure_backup() {
 
     # Step 6: Other settings
     echo ""
-    log_info "Step 6/6: Additional Settings"
+    log_info "Step 6/7: Additional Settings"
     echo ""
 
     read -p "Max backups to keep [${BACKUP_MAX_KEEP:-3}] (press Enter for default): " max_keep
@@ -662,6 +662,82 @@ configure_backup() {
 
     # Create backup script
     create_backup_script
+
+    # Step 7: Configure automatic backup schedule
+    echo ""
+    log_info "Step 7/7: Setup Automatic Backup Schedule"
+    echo ""
+    echo -e "${GREEN}Would you like to enable automatic backups?${NC}"
+    echo ""
+    read -p "Enable automatic backup schedule? [Y/n] (press Enter to enable): " enable_cron
+
+    if [[ ! $enable_cron =~ ^[Nn]$ ]]; then
+        echo ""
+        echo -e "${CYAN}Backup Frequency:${NC}"
+        echo -e "  ${GREEN}1.${NC} Daily (default)"
+        echo -e "  ${GREEN}2.${NC} Every 12 hours"
+        echo -e "  ${GREEN}3.${NC} Weekly (Sunday)"
+        echo -e "  ${GREEN}0.${NC} Skip automatic backup setup"
+        echo ""
+        read -p "Select frequency [1-3,0] (press Enter for daily): " freq_choice
+        freq_choice="${freq_choice:-1}"
+
+        case $freq_choice in
+            1)
+                # Daily backup - ask for time
+                echo ""
+                echo -e "${CYAN}Select backup time (hour in 24h format):${NC}"
+                echo -e "  ${GREEN}Recommended:${NC} 2-4 AM (low activity hours)"
+                echo ""
+                read -p "Hour [0-23] (press Enter for 2 AM): " backup_hour
+                backup_hour="${backup_hour:-2}"
+
+                # Validate hour
+                if ! [[ "$backup_hour" =~ ^[0-9]+$ ]] || [ "$backup_hour" -lt 0 ] || [ "$backup_hour" -gt 23 ]; then
+                    log_warning "Invalid hour, using default (2 AM)"
+                    backup_hour=2
+                fi
+
+                local cron_schedule="0 $backup_hour * * *"
+                local cron_cmd="$cron_schedule $BACKUP_SCRIPT >> ${BACKUP_LOG_FILE:-$DEFAULT_LOG_FILE} 2>&1"
+                crontab -l 2>/dev/null | grep -v "$BACKUP_SCRIPT" | { cat; echo "$cron_cmd"; } | crontab -
+                log_success "Daily backup scheduled at ${backup_hour}:00"
+                ;;
+            2)
+                # Every 12 hours
+                local cron_schedule="0 */12 * * *"
+                local cron_cmd="$cron_schedule $BACKUP_SCRIPT >> ${BACKUP_LOG_FILE:-$DEFAULT_LOG_FILE} 2>&1"
+                crontab -l 2>/dev/null | grep -v "$BACKUP_SCRIPT" | { cat; echo "$cron_cmd"; } | crontab -
+                log_success "Backup scheduled every 12 hours"
+                ;;
+            3)
+                # Weekly on Sunday
+                echo ""
+                read -p "Hour [0-23] (press Enter for 2 AM): " backup_hour
+                backup_hour="${backup_hour:-2}"
+
+                if ! [[ "$backup_hour" =~ ^[0-9]+$ ]] || [ "$backup_hour" -lt 0 ] || [ "$backup_hour" -gt 23 ]; then
+                    log_warning "Invalid hour, using default (2 AM)"
+                    backup_hour=2
+                fi
+
+                local cron_schedule="0 $backup_hour * * 0"
+                local cron_cmd="$cron_schedule $BACKUP_SCRIPT >> ${BACKUP_LOG_FILE:-$DEFAULT_LOG_FILE} 2>&1"
+                crontab -l 2>/dev/null | grep -v "$BACKUP_SCRIPT" | { cat; echo "$cron_cmd"; } | crontab -
+                log_success "Weekly backup scheduled (Sunday at ${backup_hour}:00)"
+                ;;
+            0)
+                log_info "Automatic backup not configured"
+                log_info "You can set it up later from the main menu (option 8)"
+                ;;
+            *)
+                log_warning "Invalid choice, skipping automatic backup setup"
+                ;;
+        esac
+    else
+        log_info "Automatic backup not configured"
+        log_info "You can set it up later from the main menu (option 8)"
+    fi
 
     echo ""
     log_success "Configuration saved successfully!"
