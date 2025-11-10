@@ -1555,53 +1555,61 @@ main() {
             fi
             ;;
         menu)
-            show_status
-            echo ""
-
-            if is_configured; then
-                echo -e "${GREEN}Available actions:${NC}"
-                echo -e "  ${GREEN}1.${NC} ${GREEN}⚡ 立即运行备份 (Run backup now)${NC}"
-                echo -e "  ${CYAN}2.${NC} List remote backups"
-                echo -e "  ${MAGENTA}3.${NC} ${MAGENTA}🔓 Restore backup (decrypt & restore)${NC}"
-                echo -e "  ${CYAN}4.${NC} View logs"
-                echo -e "  ${CYAN}5.${NC} Test configuration"
-                echo -e "  ${YELLOW}6.${NC} ${YELLOW}📝 Edit configuration (modify settings)${NC}"
-                echo -e "  ${CYAN}7.${NC} Reconfigure backup (full setup)"
-                echo -e "  ${CYAN}8.${NC} Setup automatic backup (cron)"
-                echo -e "  ${CYAN}9.${NC} Install dependencies"
-                echo -e "  ${CYAN}0.${NC} Exit"
+            while true; do
+                show_status
                 echo ""
-                read -p "Select action [0-9] (press Enter to run backup): " action
-                action="${action:-1}"  # Default to option 1 (run backup)
 
-                case $action in
-                    1) run_backup ;;
-                    2) list_backups ;;
-                    3)
-                        if [ -f "${SCRIPTS_PATH}/backup_restore.sh" ]; then
-                            bash "${SCRIPTS_PATH}/backup_restore.sh" menu
-                        elif [ -f "$(dirname "$0")/backup_restore.sh" ]; then
-                            bash "$(dirname "$0")/backup_restore.sh" menu
-                        else
-                            log_error "Restore script not found"
-                        fi
-                        ;;
-                    4) view_logs ;;
-                    5) test_configuration ;;
-                    6) edit_configuration ;;
-                    7) configure_backup ;;
-                    8) setup_cron ;;
-                    9) install_rclone ;;
-                    0) log_info "Exiting" ;;
-                    *) log_error "Invalid selection" ;;
-                esac
-            else
-                echo ""
-                read -p "Backup is not configured. Configure now? [Y/n] (press Enter to confirm): " config
-                if [[ ! $config =~ ^[Nn]$ ]]; then
-                    configure_backup
+                if is_configured; then
+                    echo -e "${GREEN}Available actions:${NC}"
+                    echo -e "  ${GREEN}1.${NC} ${GREEN}⚡ 立即运行备份 (Run backup now)${NC}"
+                    echo -e "  ${CYAN}2.${NC} List remote backups"
+                    echo -e "  ${MAGENTA}3.${NC} ${MAGENTA}🔓 Restore backup (decrypt & restore)${NC}"
+                    echo -e "  ${CYAN}4.${NC} View logs"
+                    echo -e "  ${CYAN}5.${NC} Test configuration"
+                    echo -e "  ${YELLOW}6.${NC} ${YELLOW}📝 Edit configuration (modify settings)${NC}"
+                    echo -e "  ${CYAN}7.${NC} Reconfigure backup (full setup)"
+                    echo -e "  ${CYAN}8.${NC} Setup automatic backup (cron)"
+                    echo -e "  ${CYAN}9.${NC} Install dependencies"
+                    echo -e "  ${CYAN}0.${NC} Exit"
+                    echo ""
+                    read -p "Select action [0-9] (press Enter to run backup): " action
+                    action="${action:-1}"  # Default to option 1 (run backup)
+
+                    case $action in
+                        1) run_backup ;;
+                        2) list_backups ;;
+                        3)
+                            if [ -f "${SCRIPTS_PATH}/backup_restore.sh" ]; then
+                                bash "${SCRIPTS_PATH}/backup_restore.sh" menu
+                            elif [ -f "$(dirname "$0")/backup_restore.sh" ]; then
+                                bash "$(dirname "$0")/backup_restore.sh" menu
+                            else
+                                log_error "Restore script not found"
+                            fi
+                            ;;
+                        4) view_logs ;;
+                        5) test_configuration ;;
+                        6) edit_configuration ;;
+                        7) configure_backup ;;
+                        8) setup_cron ;;
+                        9) install_rclone ;;
+                        0)
+                            log_info "Exiting"
+                            exit 0
+                            ;;
+                        *) log_error "Invalid selection" ;;
+                    esac
+                else
+                    echo ""
+                    read -p "Backup is not configured. Configure now? [Y/n] (press Enter to confirm): " config
+                    if [[ ! $config =~ ^[Nn]$ ]]; then
+                        configure_backup
+                    else
+                        log_info "Exiting"
+                        exit 0
+                    fi
                 fi
-            fi
+            done
             ;;
         *)
             log_error "Unknown command: $1"
