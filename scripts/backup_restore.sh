@@ -147,11 +147,21 @@ restore_backup() {
     log_info "Decrypting backup..."
     local decrypted_file="${encrypted_file%.enc}"
 
-    if [ -z "$BACKUP_PASSWORD" ]; then
+    # Always prompt for password confirmation
+    local decrypt_pass=""
+    if [ -n "$BACKUP_PASSWORD" ]; then
+        echo ""
+        read -p "Use configured password? [Y/n] (press Enter to use configured): " use_config
+        if [[ ! $use_config =~ ^[Nn]$ ]]; then
+            decrypt_pass="$BACKUP_PASSWORD"
+            log_info "Using configured password"
+        else
+            read -sp "Enter decryption password: " decrypt_pass
+            echo ""
+        fi
+    else
         read -sp "Enter decryption password: " decrypt_pass
         echo ""
-    else
-        decrypt_pass="$BACKUP_PASSWORD"
     fi
 
     openssl enc -aes-256-cbc -d -salt -pbkdf2 -pass pass:"$decrypt_pass" \
@@ -253,11 +263,21 @@ verify_backup() {
     echo ""
     log_info "Testing decryption..."
 
-    if [ -z "$BACKUP_PASSWORD" ]; then
+    # Always prompt for password confirmation
+    local test_pass=""
+    if [ -n "$BACKUP_PASSWORD" ]; then
+        echo ""
+        read -p "Use configured password? [Y/n] (press Enter to use configured): " use_config
+        if [[ ! $use_config =~ ^[Nn]$ ]]; then
+            test_pass="$BACKUP_PASSWORD"
+            log_info "Using configured password"
+        else
+            read -sp "Enter password: " test_pass
+            echo ""
+        fi
+    else
         read -sp "Enter password: " test_pass
         echo ""
-    else
-        test_pass="$BACKUP_PASSWORD"
     fi
 
     openssl enc -aes-256-cbc -d -salt -pbkdf2 -pass pass:"$test_pass" \
