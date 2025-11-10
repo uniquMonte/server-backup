@@ -165,7 +165,7 @@ show_status() {
         if [ -f "${BACKUP_LOG_FILE:-$DEFAULT_LOG_FILE}" ]; then
             echo ""
             echo -e "${GREEN}Last Backup Activity:${NC}"
-            local last_backup=$(grep "备份过程完成\|backup completed" "${BACKUP_LOG_FILE:-$DEFAULT_LOG_FILE}" | tail -1)
+            local last_backup=$(grep "Backup process completed\|backup completed" "${BACKUP_LOG_FILE:-$DEFAULT_LOG_FILE}" | tail -1)
             if [ -n "$last_backup" ]; then
                 echo -e "  ${CYAN}${last_backup}${NC}"
             else
@@ -423,7 +423,7 @@ configure_backup() {
                     if [[ $remote_choice =~ ^[0-9]+$ ]] && [ $remote_choice -ge 0 ] && [ $remote_choice -le $remote_count ]; then
                         break
                     else
-                        log_error "无效的选择，请输入 0-${remote_count}"
+                        log_error "Invalid choice, please enter 0-${remote_count}"
                     fi
                 done
             fi
@@ -785,7 +785,7 @@ log_and_notify() {
     if [ "$is_error" = "true" ]; then
         echo "ERROR: ${message}"
         send_telegram_message "🖥️ <b>$HOSTNAME</b>
-❌ <b>备份错误</b>
+❌ <b>Backup Error</b>
 ${message}"
         return 1
     else
@@ -797,7 +797,7 @@ ${message}"
 # Check if another backup is running
 if [ -f "$LOCK_FILE" ]; then
     if kill -0 $(cat "$LOCK_FILE") 2>/dev/null; then
-        log_and_notify "另一个备份进程正在运行 (PID: $(cat "$LOCK_FILE"))" true
+        log_and_notify "Another backup process is already running (PID: $(cat "$LOCK_FILE"))" true
         exit 1
     else
         # Stale lock file
@@ -813,12 +813,12 @@ AVAILABLE_SPACE=$(df "${BACKUP_TMP_DIR%/*}" | tail -1 | awk '{print $4}')
 REQUIRED_SPACE=$((1024 * 1024))  # 1GB in KB
 
 if [ "$AVAILABLE_SPACE" -lt "$REQUIRED_SPACE" ]; then
-    log_and_notify "磁盘空间不足 (可用: $((AVAILABLE_SPACE/1024))MB, 需要: $((REQUIRED_SPACE/1024))MB)" true
+    log_and_notify "Insufficient disk space (available: $((AVAILABLE_SPACE/1024))MB, required: $((REQUIRED_SPACE/1024))MB)" true
     exit 1
 fi
 
 # Start backup
-log_and_notify "开始备份过程 - ${DATE}"
+log_and_notify "Starting backup process - ${DATE}"
 
 # Clean and create temp directory
 rm -rf "${BACKUP_TMP_DIR}"
@@ -835,42 +835,42 @@ for SRC in "${BACKUP_SRCS_ARRAY[@]}"; do
     if [ -e "$SRC" ]; then
         TAR_ARGS+=("-C" "$(dirname "$SRC")" "$(basename "$SRC")")
     else
-        log_and_notify "警告: 备份源不存在 - $SRC"
+        log_and_notify "Warning: Backup source does not exist - $SRC"
     fi
 done
 
 # Compress
-log_and_notify "正在压缩备份..."
+log_and_notify "Compressing backup..."
 tar "${TAR_ARGS[@]}" >> "$BACKUP_LOG_FILE" 2>&1
 rc=$?
 
 if [ $rc -ne 0 ] && [ $rc -ne 1 ]; then
-    log_and_notify "压缩失败 (tar exit code $rc)" true
+    log_and_notify "Compression failed (tar exit code $rc)" true
     exit 1
 fi
 
 # Encrypt
-log_and_notify "正在加密备份..."
+log_and_notify "Encrypting backup..."
 openssl enc -aes-256-cbc -salt -pbkdf2 -pass pass:"$BACKUP_PASSWORD" \
     -in "${BACKUP_TMP_DIR}/${BACKUP_FILE}" \
     -out "${BACKUP_TMP_DIR}/${ENCRYPTED_BACKUP_FILE}" >> "$BACKUP_LOG_FILE" 2>&1
 
 if [ $? -ne 0 ]; then
-    log_and_notify "加密失败" true
+    log_and_notify "Encryption failed" true
     exit 1
 fi
 
 rm -f "${BACKUP_TMP_DIR}/${BACKUP_FILE}"
 
 # Generate SHA256 checksum
-log_and_notify "生成校验和..."
+log_and_notify "Generating checksum..."
 sha256sum "${BACKUP_TMP_DIR}/${ENCRYPTED_BACKUP_FILE}" | awk '{print $1}' > "${BACKUP_TMP_DIR}/${CHECKSUM_FILE}"
 
 # Get file size
 BACKUP_SIZE=$(du -h "${BACKUP_TMP_DIR}/${ENCRYPTED_BACKUP_FILE}" | cut -f1)
 
 # Upload with retry (max 3 attempts)
-log_and_notify "正在上传到 ${BACKUP_REMOTE_DIR}..."
+log_and_notify "Uploading to ${BACKUP_REMOTE_DIR}..."
 UPLOAD_ATTEMPTS=0
 MAX_ATTEMPTS=3
 
@@ -887,22 +887,22 @@ while [ $UPLOAD_ATTEMPTS -lt $MAX_ATTEMPTS ]; do
         LOCAL_SIZE=$(stat -f%z "${BACKUP_TMP_DIR}/${ENCRYPTED_BACKUP_FILE}" 2>/dev/null || stat -c%s "${BACKUP_TMP_DIR}/${ENCRYPTED_BACKUP_FILE}")
 
         if [ "$REMOTE_SIZE" = "$LOCAL_SIZE" ]; then
-            log_and_notify "上传成功，大小验证通过"
+            log_and_notify "Upload successful, size verified"
             break
         else
-            log_and_notify "警告: 文件大小不匹配 (本地: $LOCAL_SIZE, 远程: $REMOTE_SIZE)"
+            log_and_notify "Warning: File size mismatch (local: $LOCAL_SIZE, remote: $REMOTE_SIZE)"
         fi
     fi
 
     UPLOAD_ATTEMPTS=$((UPLOAD_ATTEMPTS + 1))
     if [ $UPLOAD_ATTEMPTS -lt $MAX_ATTEMPTS ]; then
-        log_and_notify "上传失败，重试 $UPLOAD_ATTEMPTS/$MAX_ATTEMPTS..."
+        log_and_notify "Upload failed, retrying $UPLOAD_ATTEMPTS/$MAX_ATTEMPTS..."
         sleep 5
     fi
 done
 
 if [ $UPLOAD_ATTEMPTS -eq $MAX_ATTEMPTS ]; then
-    log_and_notify "上传失败，已达最大重试次数" true
+    log_and_notify "Upload failed after maximum retry attempts" true
     exit 1
 fi
 
@@ -914,27 +914,27 @@ rm -f "${BACKUP_TMP_DIR}/${ENCRYPTED_BACKUP_FILE}"
 rm -f "${BACKUP_TMP_DIR}/${CHECKSUM_FILE}"
 
 # Remove old backups
-log_and_notify "正在清理旧备份..."
+log_and_notify "Cleaning up old backups..."
 OLD_BACKUPS=$(rclone lsf "${BACKUP_REMOTE_DIR}" | grep "^backup-${HOSTNAME}-.*\.tar\.gz\.enc$" | sort -r | tail -n +$((BACKUP_MAX_KEEP + 1)))
 
 for file in $OLD_BACKUPS; do
     rclone delete "${BACKUP_REMOTE_DIR}/${file}" --drive-use-trash=false >> "$BACKUP_LOG_FILE" 2>&1
     rclone delete "${BACKUP_REMOTE_DIR}/${file}.sha256" --drive-use-trash=false >> "$BACKUP_LOG_FILE" 2>&1
-    log_and_notify "已删除旧备份: $file"
+    log_and_notify "Deleted old backup: $file"
 done
 
 # Get backup stats
 BACKUP_COUNT=$(rclone lsf "${BACKUP_REMOTE_DIR}" | grep "^backup-${HOSTNAME}-" | grep "\.tar\.gz\.enc$" | wc -l)
 
 # Success notification
-send_telegram_message "🖥️ <b>$HOSTNAME 备份完成</b>
-✅ 备份成功
-📦 文件大小: ${BACKUP_SIZE}
-📚 保留备份数: ${BACKUP_COUNT}
-📅 备份文件: ${ENCRYPTED_BACKUP_FILE}
-✓ 已生成 SHA256 校验和"
+send_telegram_message "🖥️ <b>$HOSTNAME Backup Completed</b>
+✅ Backup successful
+📦 File size: ${BACKUP_SIZE}
+📚 Backups retained: ${BACKUP_COUNT}
+📅 Backup file: ${ENCRYPTED_BACKUP_FILE}
+✓ SHA256 checksum generated"
 
-log_and_notify "备份过程完成! 文件: ${ENCRYPTED_BACKUP_FILE} (${BACKUP_SIZE})"
+log_and_notify "Backup process completed! File: ${ENCRYPTED_BACKUP_FILE} (${BACKUP_SIZE})"
 
 exit 0
 EOFSCRIPT
@@ -1564,12 +1564,12 @@ main() {
 
                 if is_configured; then
                     echo -e "${GREEN}Available actions:${NC}"
-                    echo -e "  ${GREEN}1.${NC} ${GREEN}⚡ 立即运行备份 (Run backup now)${NC}"
+                    echo -e "  ${GREEN}1.${NC} ${GREEN}Run backup now${NC}"
                     echo -e "  ${CYAN}2.${NC} List remote backups"
-                    echo -e "  ${MAGENTA}3.${NC} ${MAGENTA}🔓 Restore backup (decrypt & restore)${NC}"
+                    echo -e "  ${MAGENTA}3.${NC} ${MAGENTA}Restore backup${NC}"
                     echo -e "  ${CYAN}4.${NC} View logs"
                     echo -e "  ${CYAN}5.${NC} Test configuration"
-                    echo -e "  ${YELLOW}6.${NC} ${YELLOW}📝 Edit configuration (modify settings)${NC}"
+                    echo -e "  ${YELLOW}6.${NC} ${YELLOW}Edit configuration${NC}"
                     echo -e "  ${CYAN}7.${NC} Reconfigure backup (full setup)"
                     echo -e "  ${CYAN}8.${NC} Setup automatic backup (cron)"
                     echo -e "  ${CYAN}9.${NC} Install dependencies"
