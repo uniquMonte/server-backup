@@ -125,7 +125,7 @@ show_status() {
         echo -e "  Remote Directory:  ${CYAN}${BACKUP_REMOTE_DIR:-Not set}${NC}"
         echo -e "  Log File:          ${CYAN}${BACKUP_LOG_FILE:-$DEFAULT_LOG_FILE}${NC}"
         echo -e "  Temp Directory:    ${CYAN}${BACKUP_TMP_DIR:-$DEFAULT_TMP_DIR}${NC}"
-        echo -e "  Max Backups:       ${CYAN}${BACKUP_MAX_KEEP:-2}${NC}"
+        echo -e "  Max Backups:       ${CYAN}${BACKUP_MAX_KEEP:-3}${NC}"
 
         # Encryption status
         if [ -n "$BACKUP_PASSWORD" ]; then
@@ -643,8 +643,8 @@ configure_backup() {
     log_info "Step 6/6: Additional Settings"
     echo ""
 
-    read -p "Max backups to keep [${BACKUP_MAX_KEEP:-2}] (press Enter for default): " max_keep
-    BACKUP_MAX_KEEP="${max_keep:-${BACKUP_MAX_KEEP:-2}}"
+    read -p "Max backups to keep [${BACKUP_MAX_KEEP:-3}] (press Enter for default): " max_keep
+    BACKUP_MAX_KEEP="${max_keep:-${BACKUP_MAX_KEEP:-3}}"
 
     read -p "Log file path [${BACKUP_LOG_FILE:-$DEFAULT_LOG_FILE}] (press Enter for default): " log_file
     BACKUP_LOG_FILE="${log_file:-${BACKUP_LOG_FILE:-$DEFAULT_LOG_FILE}}"
