@@ -1068,8 +1068,9 @@ setup_logrotate() {
     cat > "$logrotate_conf" << EOF
 # VPS Backup log rotation configuration
 $log_file {
-    # Rotate daily
+    # Rotate daily or when size reaches 50MB
     daily
+    size 50M
     # Keep 7 days of logs
     rotate 7
     # Compress old logs
@@ -1090,6 +1091,7 @@ EOF
 
     if [ $? -eq 0 ]; then
         log_success "Logrotate configured at $logrotate_conf"
+        log_info "Logs will be rotated daily or when reaching 50MB"
         log_info "Logs will be kept for 7 days and compressed"
     else
         log_warning "Failed to create logrotate configuration"
