@@ -1530,40 +1530,89 @@ edit_configuration() {
                 case $src_action in
                     a|A)
                         echo ""
-                        read -p "Enter path to add: " new_src
-                        new_src="${new_src/#\~/$HOME}"
-                        if [ -e "$new_src" ]; then
-                            SOURCES+=("$new_src")
-                            BACKUP_SRCS=$(IFS='|'; echo "${SOURCES[*]}")
-                            save_config
-                            create_backup_script
-                            log_success "Added: $new_src"
-                        else
-                            log_warning "Path does not exist: $new_src"
-                            read -p "Add anyway? [y/N] (press Enter to skip): " add_anyway
-                            if [[ $add_anyway =~ ^[Yy]$ ]]; then
+                        log_info "Add backup sources (press Enter on empty line to finish)"
+                        echo ""
+
+                        while true; do
+                            read -p "Enter path to add: " new_src
+
+                            # If empty input, break the loop
+                            if [ -z "$new_src" ]; then
+                                echo ""
+                                log_info "Finished adding sources"
+                                break
+                            fi
+
+                            # Expand ~ to home directory
+                            new_src="${new_src/#\~/$HOME}"
+
+                            if [ -e "$new_src" ]; then
                                 SOURCES+=("$new_src")
                                 BACKUP_SRCS=$(IFS='|'; echo "${SOURCES[*]}")
                                 save_config
                                 create_backup_script
                                 log_success "Added: $new_src"
+                                echo ""
+                            else
+                                log_warning "Path does not exist: $new_src"
+                                read -p "Add anyway? [y/N] (press Enter to skip): " add_anyway
+                                if [[ $add_anyway =~ ^[Yy]$ ]]; then
+                                    SOURCES+=("$new_src")
+                                    BACKUP_SRCS=$(IFS='|'; echo "${SOURCES[*]}")
+                                    save_config
+                                    create_backup_script
+                                    log_success "Added: $new_src"
+                                else
+                                    log_info "Skipped: $new_src"
+                                fi
+                                echo ""
                             fi
-                        fi
+                        done
                         ;;
                     r|R)
                         echo ""
-                        read -p "Enter number to remove (1-${#SOURCES[@]}): " remove_idx
-                        if [[ $remove_idx =~ ^[0-9]+$ ]] && [ $remove_idx -ge 1 ] && [ $remove_idx -le ${#SOURCES[@]} ]; then
-                            removed="${SOURCES[$((remove_idx-1))]}"
-                            unset 'SOURCES[$((remove_idx-1))]'
-                            SOURCES=("${SOURCES[@]}")  # Reindex array
-                            BACKUP_SRCS=$(IFS='|'; echo "${SOURCES[*]}")
-                            save_config
-                            create_backup_script
-                            log_success "Removed: $removed"
-                        else
-                            log_error "Invalid selection"
-                        fi
+                        log_info "Remove backup sources (press Enter on empty line to finish)"
+                        echo ""
+
+                        while true; do
+                            # Reload current sources to show updated list
+                            IFS='|' read -ra SOURCES <<< "$BACKUP_SRCS"
+
+                            if [ ${#SOURCES[@]} -eq 0 ]; then
+                                log_warning "No backup sources configured"
+                                break
+                            fi
+
+                            # Display current sources
+                            echo "Current backup sources:"
+                            for i in "${!SOURCES[@]}"; do
+                                echo -e "  $((i+1)). ${CYAN}${SOURCES[$i]}${NC}"
+                            done
+                            echo ""
+
+                            read -p "Enter number to remove (1-${#SOURCES[@]}) or press Enter to finish: " remove_idx
+
+                            # If empty input, break the loop
+                            if [ -z "$remove_idx" ]; then
+                                echo ""
+                                log_info "Finished removing sources"
+                                break
+                            fi
+
+                            if [[ $remove_idx =~ ^[0-9]+$ ]] && [ $remove_idx -ge 1 ] && [ $remove_idx -le ${#SOURCES[@]} ]; then
+                                removed="${SOURCES[$((remove_idx-1))]}"
+                                unset 'SOURCES[$((remove_idx-1))]'
+                                SOURCES=("${SOURCES[@]}")  # Reindex array
+                                BACKUP_SRCS=$(IFS='|'; echo "${SOURCES[*]}")
+                                save_config
+                                create_backup_script
+                                log_success "Removed: $removed"
+                                echo ""
+                            else
+                                log_error "Invalid selection"
+                                echo ""
+                            fi
+                        done
                         ;;
                     c|C)
                         configure_backup_sources
