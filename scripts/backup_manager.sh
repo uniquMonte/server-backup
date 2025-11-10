@@ -697,6 +697,9 @@ configure_backup() {
     # Create backup script
     create_backup_script
 
+    # Setup log rotation
+    setup_logrotate
+
     # Step 7: Configure automatic backup schedule
     echo ""
     log_info "Step 7/7: Setup Automatic Backup Schedule"
@@ -1051,6 +1054,46 @@ EOFSCRIPT
 
     chmod +x "$BACKUP_SCRIPT"
     log_success "Backup script created at $BACKUP_SCRIPT"
+}
+
+# Setup logrotate for backup logs
+setup_logrotate() {
+    local log_file="${BACKUP_LOG_FILE:-$DEFAULT_LOG_FILE}"
+    local logrotate_conf="/etc/logrotate.d/vps-backup"
+
+    echo ""
+    log_info "Setting up log rotation..."
+
+    # Create logrotate configuration
+    cat > "$logrotate_conf" << EOF
+# VPS Backup log rotation configuration
+$log_file {
+    # Rotate daily
+    daily
+    # Keep 7 days of logs
+    rotate 7
+    # Compress old logs
+    compress
+    # Delay compression until next rotation
+    delaycompress
+    # Don't error if log file is missing
+    missingok
+    # Don't rotate if log is empty
+    notifempty
+    # Create new log with these permissions
+    create 0640 root root
+    # Use date as suffix for rotated files
+    dateext
+    dateformat -%Y%m%d
+}
+EOF
+
+    if [ $? -eq 0 ]; then
+        log_success "Logrotate configured at $logrotate_conf"
+        log_info "Logs will be kept for 7 days and compressed"
+    else
+        log_warning "Failed to create logrotate configuration"
+    fi
 }
 
 # Test configuration
@@ -1685,6 +1728,7 @@ uninstall_backup() {
     echo -e "  • Manager script: ${CYAN}/usr/local/bin/backup_manager.sh${NC}"
     echo -e "  • Restore script: ${CYAN}/usr/local/bin/backup_restore.sh${NC}"
     echo -e "  • Cron jobs for automated backups"
+    echo -e "  • Logrotate configuration: ${CYAN}/etc/logrotate.d/vps-backup${NC}"
 
     # Check if log file exists and show it
     local log_file_path=""
@@ -1743,6 +1787,12 @@ uninstall_backup() {
     if [ -n "$log_file_path" ] && [ -f "$log_file_path" ]; then
         rm -f "$log_file_path"
         log_success "Log file removed: $log_file_path"
+    fi
+
+    # Remove logrotate configuration
+    if [ -f "/etc/logrotate.d/vps-backup" ]; then
+        rm -f "/etc/logrotate.d/vps-backup"
+        log_success "Logrotate configuration removed"
     fi
 
     # Remove manager script itself (last step)
