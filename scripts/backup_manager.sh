@@ -1530,11 +1530,12 @@ edit_configuration() {
                 case $src_action in
                     a|A)
                         echo ""
-                        log_info "Add backup sources (press Enter on empty line to finish)"
+                        log_info "Add backup sources"
+                        echo -e "${CYAN}Tip: Press Enter on empty line when you're done${NC}"
                         echo ""
 
                         while true; do
-                            read -p "Enter path to add: " new_src
+                            read -p "Enter path to add (or press Enter to finish): " new_src
 
                             # If empty input, break the loop
                             if [ -z "$new_src" ]; then
@@ -1571,7 +1572,8 @@ edit_configuration() {
                         ;;
                     r|R)
                         echo ""
-                        log_info "Remove backup sources (press Enter on empty line to finish)"
+                        log_info "Remove backup sources"
+                        echo -e "${CYAN}Tip: Press Enter on empty line when you're done${NC}"
                         echo ""
 
                         while true; do
@@ -1590,7 +1592,7 @@ edit_configuration() {
                             done
                             echo ""
 
-                            read -p "Enter number to remove (1-${#SOURCES[@]}) or press Enter to finish: " remove_idx
+                            read -p "Enter number to remove [1-${#SOURCES[@]}] (or press Enter to finish): " remove_idx
 
                             # If empty input, break the loop
                             if [ -z "$remove_idx" ]; then
