@@ -1273,7 +1273,8 @@ setup_cron() {
     echo -e "  ${RED}10.${NC} Remove scheduled backup"
     echo ""
 
-    read -p "Select option [1-10]: " schedule_option
+    read -p "Select option [1-10] (press Enter for option 2): " schedule_option
+    schedule_option="${schedule_option:-2}"  # Default to option 2 (2:00 AM)
 
     local cron_schedule=""
     case $schedule_option in
