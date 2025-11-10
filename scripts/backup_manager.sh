@@ -126,11 +126,7 @@ show_status() {
 
         echo ""
         echo -e "${GREEN}Configuration Details:${NC}"
-        echo -e "  Backup Script:     ${CYAN}${BACKUP_SCRIPT}${NC}"
-        echo -e "  Config File:       ${CYAN}${BACKUP_ENV}${NC}"
         echo -e "  Remote Directory:  ${CYAN}${BACKUP_REMOTE_DIR:-Not set}${NC}"
-        echo -e "  Log File:          ${CYAN}${BACKUP_LOG_FILE:-$DEFAULT_LOG_FILE}${NC}"
-        echo -e "  Temp Directory:    ${CYAN}${BACKUP_TMP_DIR:-$DEFAULT_TMP_DIR}${NC}"
         echo -e "  Max Backups:       ${CYAN}${BACKUP_MAX_KEEP:-3}${NC}"
 
         # Encryption status
@@ -148,6 +144,11 @@ show_status() {
         else
             echo -e "  Telegram Notify:   ${YELLOW}Disabled${NC}"
         fi
+
+        echo -e "  Backup Script:     ${CYAN}${BACKUP_SCRIPT}${NC}"
+        echo -e "  Config File:       ${CYAN}${BACKUP_ENV}${NC}"
+        echo -e "  Log File:          ${CYAN}${BACKUP_LOG_FILE:-$DEFAULT_LOG_FILE}${NC}"
+        echo -e "  Temp Directory:    ${CYAN}${BACKUP_TMP_DIR:-$DEFAULT_TMP_DIR}${NC}"
 
         # Check if rclone remote is configured
         echo ""
@@ -171,10 +172,6 @@ show_status() {
                 echo -e "  ${YELLOW}No backup history found${NC}"
             fi
         fi
-
-        # Quick action hint
-        echo ""
-        echo -e "${BLUE}💡 Tip:${NC} Press Enter in the menu to run backup immediately"
 
     else
         echo -e "${YELLOW}Configuration Status:${NC}  ${YELLOW}Not configured${NC}"
@@ -1578,8 +1575,8 @@ main() {
                     echo -e "  ${CYAN}9.${NC} Install dependencies"
                     echo -e "  ${CYAN}0.${NC} Exit"
                     echo ""
-                    read -p "Select action [0-9] (press Enter to run backup): " action
-                    action="${action:-1}"  # Default to option 1 (run backup)
+                    read -p "Select action [0-9] (press Enter to exit): " action
+                    action="${action:-0}"  # Default to option 0 (exit)
 
                     case $action in
                         1) run_backup ;;
