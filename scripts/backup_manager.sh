@@ -45,6 +45,28 @@ is_configured() {
     [ -f "$BACKUP_ENV" ] && [ -f "$BACKUP_SCRIPT" ]
 }
 
+# Get current logrotate configuration
+get_logrotate_config() {
+    local logrotate_conf="/etc/logrotate.d/vps-backup"
+
+    if [ ! -f "$logrotate_conf" ]; then
+        echo "Not configured"
+        return 1
+    fi
+
+    # Parse size and rotate parameters
+    local size=$(grep "^\s*size" "$logrotate_conf" | awk '{print $2}')
+    local days=$(grep "^\s*rotate" "$logrotate_conf" | awk '{print $2}')
+
+    if [ -n "$size" ] && [ -n "$days" ]; then
+        echo "${size} / ${days} days"
+        return 0
+    else
+        echo "Configured"
+        return 0
+    fi
+}
+
 # Load configuration
 load_config() {
     if [ -f "$BACKUP_ENV" ]; then
@@ -182,6 +204,15 @@ show_status() {
         echo -e "  Backup Script:     ${CYAN}${BACKUP_SCRIPT}${NC}"
         echo -e "  Config File:       ${CYAN}${BACKUP_ENV}${NC}"
         echo -e "  Log File:          ${CYAN}${BACKUP_LOG_FILE:-$DEFAULT_LOG_FILE}${NC}"
+
+        # Log rotation status
+        local logrotate_status=$(get_logrotate_config)
+        if [ "$logrotate_status" = "Not configured" ]; then
+            echo -e "  Log Rotation:      ${YELLOW}${logrotate_status}${NC}"
+        else
+            echo -e "  Log Rotation:      ${GREEN}${logrotate_status}${NC}"
+        fi
+
         echo -e "  Temp Directory:    ${CYAN}${BACKUP_TMP_DIR:-$DEFAULT_TMP_DIR}${NC}"
 
         # Check if rclone remote is configured
@@ -1462,10 +1493,11 @@ edit_configuration() {
         echo -e "  ${CYAN}7.${NC} Log and temp paths"
         echo -e "  ${CYAN}8.${NC} View current configuration"
         echo -e "  ${CYAN}9.${NC} Setup/modify backup schedule (cron)"
+        echo -e "  ${CYAN}10.${NC} Configure log rotation"
         echo -e "  ${CYAN}r.${NC} Regenerate backup script"
         echo -e "  ${CYAN}0.${NC} Return to main menu (default)"
         echo ""
-        read -p "Select option [0-9,r] (press Enter to return): " edit_choice
+        read -p "Select option [0-10,r] (press Enter to return): " edit_choice
         edit_choice="${edit_choice:-0}"  # Default to option 0 (return to main menu)
 
         case $edit_choice in
@@ -1708,6 +1740,49 @@ edit_configuration() {
             9)
                 # Setup cron
                 setup_cron
+                ;;
+
+            10)
+                # Configure log rotation
+                echo ""
+                echo -e "${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+                echo -e "${CYAN}Configure Log Rotation${NC}"
+                echo -e "${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+                echo ""
+
+                # Get current configuration
+                local logrotate_conf="/etc/logrotate.d/vps-backup"
+                if [ -f "$logrotate_conf" ]; then
+                    local current_size=$(grep "^\s*size" "$logrotate_conf" | awk '{print $2}')
+                    local current_days=$(grep "^\s*rotate" "$logrotate_conf" | awk '{print $2}')
+
+                    echo -e "${GREEN}Current configuration:${NC}"
+                    echo -e "  Max log size: ${CYAN}${current_size:-Not set}${NC}"
+                    echo -e "  Keep logs:    ${CYAN}${current_days:-Not set} days${NC}"
+                else
+                    echo -e "${YELLOW}Log rotation is not configured yet${NC}"
+                    local current_size="10M"
+                    local current_days="7"
+                fi
+
+                echo ""
+                echo -e "${CYAN}Recommended settings:${NC}"
+                echo -e "  • Max log size: ${GREEN}10MB${NC} (rotate when file reaches this size)"
+                echo -e "  • Keep logs: ${GREEN}7 days${NC} (older logs will be deleted)"
+                echo ""
+
+                read -p "Max log file size (e.g., 10M, 50M, 100M) [${current_size:-10M}]: " new_size
+                new_size="${new_size:-${current_size:-10M}}"
+
+                read -p "Number of days to keep logs [${current_days:-7}]: " new_days
+                new_days="${new_days:-${current_days:-7}}"
+
+                echo ""
+                log_info "Updating log rotation configuration..."
+                setup_logrotate "$new_size" "$new_days"
+
+                echo ""
+                read -p "Press Enter to continue..."
                 ;;
 
             r|R)
