@@ -165,9 +165,15 @@ main() {
     # Initialize remote mode (if needed)
     init_remote_mode
 
-    # Download and run backup_manager.sh
+    # Download required scripts
     if ! download_script_if_needed "backup_manager.sh"; then
         log_error "Failed to load backup manager script"
+        exit 1
+    fi
+
+    # Also download backup_restore.sh for restore functionality
+    if ! download_script_if_needed "backup_restore.sh"; then
+        log_error "Failed to load backup restore script"
         exit 1
     fi
 
