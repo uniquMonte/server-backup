@@ -147,19 +147,30 @@ restore_backup() {
     log_info "Decrypting backup..."
     local decrypted_file="${encrypted_file%.enc}"
 
-    # Always prompt for password confirmation
+    # Prompt for password
     local decrypt_pass=""
     if [ -n "$BACKUP_PASSWORD" ]; then
         echo ""
-        read -p "Use configured password? [Y/n] (press Enter to use configured): " use_config
-        if [[ ! $use_config =~ ^[Nn]$ ]]; then
+        echo -e "${GREEN}Password options:${NC}"
+        echo -e "  ${CYAN}1.${NC} Use configured password (default)"
+        echo -e "  ${CYAN}2.${NC} Enter password manually"
+        echo ""
+        read -p "Select [1-2] (press Enter for option 1): " pass_choice
+        pass_choice="${pass_choice:-1}"
+
+        if [ "$pass_choice" = "1" ]; then
             decrypt_pass="$BACKUP_PASSWORD"
             log_info "Using configured password"
-        else
+        elif [ "$pass_choice" = "2" ]; then
+            echo ""
             read -sp "Enter decryption password: " decrypt_pass
             echo ""
+        else
+            log_error "Invalid option, using configured password"
+            decrypt_pass="$BACKUP_PASSWORD"
         fi
     else
+        echo ""
         read -sp "Enter decryption password: " decrypt_pass
         echo ""
     fi
@@ -263,19 +274,30 @@ verify_backup() {
     echo ""
     log_info "Testing decryption..."
 
-    # Always prompt for password confirmation
+    # Prompt for password
     local test_pass=""
     if [ -n "$BACKUP_PASSWORD" ]; then
         echo ""
-        read -p "Use configured password? [Y/n] (press Enter to use configured): " use_config
-        if [[ ! $use_config =~ ^[Nn]$ ]]; then
+        echo -e "${GREEN}Password options:${NC}"
+        echo -e "  ${CYAN}1.${NC} Use configured password (default)"
+        echo -e "  ${CYAN}2.${NC} Enter password manually"
+        echo ""
+        read -p "Select [1-2] (press Enter for option 1): " pass_choice
+        pass_choice="${pass_choice:-1}"
+
+        if [ "$pass_choice" = "1" ]; then
             test_pass="$BACKUP_PASSWORD"
             log_info "Using configured password"
-        else
+        elif [ "$pass_choice" = "2" ]; then
+            echo ""
             read -sp "Enter password: " test_pass
             echo ""
+        else
+            log_error "Invalid option, using configured password"
+            test_pass="$BACKUP_PASSWORD"
         fi
     else
+        echo ""
         read -sp "Enter password: " test_pass
         echo ""
     fi
