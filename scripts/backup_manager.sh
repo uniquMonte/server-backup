@@ -1504,12 +1504,31 @@ edit_configuration() {
             r|R)
                 # Regenerate backup script
                 echo ""
-                log_info "Regenerating backup script with latest translations..."
-                create_backup_script
+                echo -e "${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+                echo -e "${CYAN}Regenerate Backup Script${NC}"
+                echo -e "${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
                 echo ""
-                log_success "Backup script regenerated successfully!"
-                log_info "All messages are now in English"
-                log_info "Script location: ${BACKUP_SCRIPT}"
+                log_info "This will regenerate the backup script based on your current configuration"
+                echo ""
+                echo -e "${GREEN}What this does:${NC}"
+                echo -e "  • Applies latest code updates and translations"
+                echo -e "  • Uses your current configuration from: ${CYAN}${BACKUP_ENV}${NC}"
+                echo -e "  • Generates new script at: ${CYAN}${BACKUP_SCRIPT}${NC}"
+                echo -e "  • All output messages will be in English"
+                echo ""
+                read -p "Continue? [Y/n] (press Enter to continue): " confirm
+
+                if [[ ! $confirm =~ ^[Nn]$ ]]; then
+                    echo ""
+                    log_info "Regenerating backup script..."
+                    create_backup_script
+                    echo ""
+                    log_success "Backup script regenerated successfully!"
+                    log_info "Script location: ${BACKUP_SCRIPT}"
+                    log_info "You can now run backups with updated translations"
+                else
+                    log_info "Regeneration cancelled"
+                fi
                 echo ""
                 read -p "Press Enter to continue..."
                 ;;
@@ -1570,10 +1589,21 @@ main() {
 
             load_config
             echo ""
-            log_info "Regenerating backup script with latest translations..."
+            echo -e "${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+            echo -e "${CYAN}Regenerate Backup Script${NC}"
+            echo -e "${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+            echo ""
+            log_info "This will regenerate the backup script based on your current configuration"
+            echo ""
+            echo -e "${GREEN}Configuration details:${NC}"
+            echo -e "  Config file: ${CYAN}${BACKUP_ENV}${NC}"
+            echo -e "  Script path: ${CYAN}${BACKUP_SCRIPT}${NC}"
+            echo ""
+            log_info "Regenerating backup script with latest code and translations..."
             create_backup_script
             echo ""
             log_success "Backup script regenerated successfully!"
+            log_info "Script location: ${BACKUP_SCRIPT}"
             log_info "All messages are now in English"
             ;;
         restore)
