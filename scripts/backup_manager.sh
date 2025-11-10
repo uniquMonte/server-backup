@@ -1791,12 +1791,11 @@ main() {
                     echo -e "  ${CYAN}5.${NC} Test configuration"
                     echo -e "  ${YELLOW}6.${NC} ${YELLOW}Edit configuration${NC}"
                     echo -e "  ${CYAN}7.${NC} Reconfigure backup (full setup)"
-                    echo -e "  ${CYAN}8.${NC} Setup automatic backup (cron)"
-                    echo -e "  ${CYAN}9.${NC} Install dependencies"
-                    echo -e "  ${RED}u.${NC} ${RED}Uninstall backup system${NC}"
+                    echo -e "  ${CYAN}8.${NC} Install dependencies"
+                    echo -e "  ${RED}9.${NC} ${RED}Uninstall backup system${NC}"
                     echo -e "  ${CYAN}0.${NC} Exit (default)"
                     echo ""
-                    read -p "Select action [0-9,u] (press Enter to exit): " action
+                    read -p "Select action [0-9] (press Enter to exit): " action
                     action="${action:-0}"  # Default to option 0 (exit)
 
                     case $action in
@@ -1815,9 +1814,8 @@ main() {
                         5) test_configuration ;;
                         6) edit_configuration ;;
                         7) configure_backup ;;
-                        8) setup_cron ;;
-                        9) install_rclone ;;
-                        u|U)
+                        8) install_rclone ;;
+                        9)
                             uninstall_backup
                             exit 0
                             ;;
