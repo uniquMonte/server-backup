@@ -1445,7 +1445,7 @@ edit_configuration() {
                 fi
                 ;;
 
-            5)
+            6)
                 # Edit max backups
                 echo ""
                 echo -e "Current max backups: ${CYAN}$BACKUP_MAX_KEEP${NC}"
@@ -1460,7 +1460,7 @@ edit_configuration() {
                 fi
                 ;;
 
-            6)
+            7)
                 # Edit paths
                 echo ""
                 echo -e "Current log file:  ${CYAN}$BACKUP_LOG_FILE${NC}"
@@ -1479,14 +1479,14 @@ edit_configuration() {
                 log_success "Paths updated"
                 ;;
 
-            7)
+            8)
                 # View configuration
                 show_status
                 echo ""
                 read -p "Press Enter to continue..."
                 ;;
 
-            8)
+            9)
                 # Setup cron
                 setup_cron
                 ;;
