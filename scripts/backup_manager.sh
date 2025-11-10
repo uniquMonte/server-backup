@@ -173,10 +173,6 @@ show_status() {
             fi
         fi
 
-        # Quick action hint
-        echo ""
-        echo -e "${BLUE}💡 Tip:${NC} Press Enter in the menu to run backup immediately"
-
     else
         echo -e "${YELLOW}Configuration Status:${NC}  ${YELLOW}Not configured${NC}"
         echo ""
@@ -1579,8 +1575,8 @@ main() {
                     echo -e "  ${CYAN}9.${NC} Install dependencies"
                     echo -e "  ${CYAN}0.${NC} Exit"
                     echo ""
-                    read -p "Select action [0-9] (press Enter to run backup): " action
-                    action="${action:-1}"  # Default to option 1 (run backup)
+                    read -p "Select action [0-9] (press Enter to exit): " action
+                    action="${action:-0}"  # Default to option 0 (exit)
 
                     case $action in
                         1) run_backup ;;
