@@ -1539,6 +1539,95 @@ edit_configuration() {
     done
 }
 
+# Uninstall backup system
+uninstall_backup() {
+    echo ""
+    echo -e "${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+    echo -e "${CYAN}Uninstall VPS Backup System${NC}"
+    echo -e "${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+    echo ""
+    log_warning "This will remove all backup scripts and configuration"
+    echo ""
+    echo -e "${GREEN}What will be removed:${NC}"
+    echo -e "  • Backup script: ${CYAN}${BACKUP_SCRIPT}${NC}"
+    echo -e "  • Configuration file: ${CYAN}${BACKUP_ENV}${NC}"
+    echo -e "  • Manager script: ${CYAN}/usr/local/bin/backup_manager.sh${NC}"
+    echo -e "  • Restore script: ${CYAN}/usr/local/bin/backup_restore.sh${NC}"
+    echo -e "  • Cron jobs for automated backups"
+
+    # Check if log file exists and show it
+    local log_file_path=""
+    if [ -f "$BACKUP_ENV" ]; then
+        source "$BACKUP_ENV"
+        if [ -n "$BACKUP_LOG_FILE" ] && [ -f "$BACKUP_LOG_FILE" ]; then
+            log_file_path="$BACKUP_LOG_FILE"
+            echo -e "  • Log file: ${CYAN}${BACKUP_LOG_FILE}${NC}"
+        fi
+    fi
+
+    echo ""
+    echo -e "${GREEN}What will NOT be removed:${NC}"
+    echo -e "  • rclone configuration and program"
+    echo -e "  • Remote backup files in cloud storage"
+    echo ""
+
+    log_warning "This action cannot be undone!"
+    read -p "Are you sure you want to uninstall? [y/N]: " confirm
+
+    if [[ ! $confirm =~ ^[Yy]$ ]]; then
+        log_info "Uninstall cancelled"
+        return 0
+    fi
+
+    echo ""
+    log_info "Starting uninstall..."
+
+    # Remove cron jobs
+    if crontab -l 2>/dev/null | grep -q "vps-backup.sh"; then
+        log_info "Removing cron jobs..."
+        crontab -l 2>/dev/null | grep -v "vps-backup.sh" | crontab -
+        log_success "Cron jobs removed"
+    fi
+
+    # Remove backup script
+    if [ -f "$BACKUP_SCRIPT" ]; then
+        rm -f "$BACKUP_SCRIPT"
+        log_success "Backup script removed: $BACKUP_SCRIPT"
+    fi
+
+    # Remove configuration file
+    if [ -f "$BACKUP_ENV" ]; then
+        rm -f "$BACKUP_ENV"
+        log_success "Configuration file removed: $BACKUP_ENV"
+    fi
+
+    # Remove restore script
+    if [ -f "/usr/local/bin/backup_restore.sh" ]; then
+        rm -f "/usr/local/bin/backup_restore.sh"
+        log_success "Restore script removed"
+    fi
+
+    # Remove log file
+    if [ -n "$log_file_path" ] && [ -f "$log_file_path" ]; then
+        rm -f "$log_file_path"
+        log_success "Log file removed: $log_file_path"
+    fi
+
+    # Remove manager script itself (last step)
+    if [ -f "/usr/local/bin/backup_manager.sh" ]; then
+        log_success "Manager script will be removed: /usr/local/bin/backup_manager.sh"
+        log_info "Removing manager script..."
+        rm -f "/usr/local/bin/backup_manager.sh"
+    fi
+
+    echo ""
+    log_success "Uninstall completed!"
+    echo ""
+    log_info "Your remote backup files remain in cloud storage"
+    log_info "rclone is still installed and configured"
+    echo ""
+}
+
 # Main menu
 main() {
     if [ "$EUID" -ne 0 ]; then
@@ -1596,6 +1685,10 @@ main() {
             echo ""
             create_backup_script
             ;;
+        uninstall|remove)
+            uninstall_backup
+            exit 0
+            ;;
         restore)
             # Launch restore tool
             if [ -f "${SCRIPTS_PATH}/backup_restore.sh" ]; then
@@ -1623,9 +1716,10 @@ main() {
                     echo -e "  ${CYAN}7.${NC} Reconfigure backup (full setup)"
                     echo -e "  ${CYAN}8.${NC} Setup automatic backup (cron)"
                     echo -e "  ${CYAN}9.${NC} Install dependencies"
-                    echo -e "  ${CYAN}0.${NC} Exit"
+                    echo -e "  ${RED}u.${NC} ${RED}Uninstall backup system${NC}"
+                    echo -e "  ${CYAN}0.${NC} Exit (default)"
                     echo ""
-                    read -p "Select action [0-9] (press Enter to exit): " action
+                    read -p "Select action [0-9,u] (press Enter to exit): " action
                     action="${action:-0}"  # Default to option 0 (exit)
 
                     case $action in
@@ -1646,6 +1740,10 @@ main() {
                         7) configure_backup ;;
                         8) setup_cron ;;
                         9) install_rclone ;;
+                        u|U)
+                            uninstall_backup
+                            exit 0
+                            ;;
                         0)
                             log_info "Exiting"
                             exit 0
