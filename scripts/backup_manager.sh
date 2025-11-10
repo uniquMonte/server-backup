@@ -211,6 +211,7 @@ show_status() {
             echo -e "  Log Rotation:      ${YELLOW}${logrotate_status}${NC}"
         else
             echo -e "  Log Rotation:      ${GREEN}${logrotate_status}${NC}"
+            echo -e "    Config:          ${CYAN}/etc/logrotate.d/vps-backup${NC}"
         fi
 
         echo -e "  Temp Directory:    ${CYAN}${BACKUP_TMP_DIR:-$DEFAULT_TMP_DIR}${NC}"
@@ -1484,79 +1485,28 @@ edit_configuration() {
         echo -e "${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
         echo ""
         echo -e "${GREEN}What do you want to modify?${NC}"
-        echo -e "  ${CYAN}1.${NC} VPS identifier (hostname/label)"
+        echo -e "  ${CYAN}1.${NC} View current configuration"
         echo -e "  ${CYAN}2.${NC} Backup sources (add/remove directories)"
-        echo -e "  ${CYAN}3.${NC} Remote storage directory"
-        echo -e "  ${CYAN}4.${NC} Encryption password"
-        echo -e "  ${CYAN}5.${NC} Telegram notifications"
-        echo -e "  ${CYAN}6.${NC} Backup retention (max backups)"
-        echo -e "  ${CYAN}7.${NC} Log and temp paths"
-        echo -e "  ${CYAN}8.${NC} View current configuration"
-        echo -e "  ${CYAN}9.${NC} Setup/modify backup schedule (cron)"
+        echo -e "  ${CYAN}3.${NC} Backup retention (max backups)"
+        echo -e "  ${CYAN}4.${NC} Setup/modify backup schedule (cron)"
+        echo -e "  ${CYAN}5.${NC} VPS identifier (hostname/label)"
+        echo -e "  ${CYAN}6.${NC} Remote storage directory"
+        echo -e "  ${CYAN}7.${NC} Encryption password"
+        echo -e "  ${CYAN}8.${NC} Telegram notifications"
+        echo -e "  ${CYAN}9.${NC} Log and temp paths"
         echo -e "  ${CYAN}10.${NC} Configure log rotation"
-        echo -e "  ${CYAN}r.${NC} Regenerate backup script"
+        echo -e "  ${CYAN}11.${NC} Regenerate backup script"
         echo -e "  ${CYAN}0.${NC} Return to main menu (default)"
         echo ""
-        read -p "Select option [0-10,r] (press Enter to return): " edit_choice
+        read -p "Select option [0-11] (press Enter to return): " edit_choice
         edit_choice="${edit_choice:-0}"  # Default to option 0 (return to main menu)
 
         case $edit_choice in
             1)
-                # Edit VPS identifier
+                # View configuration
+                show_status
                 echo ""
-                echo -e "Current VPS identifier: ${CYAN}$BACKUP_HOSTNAME${NC}"
-                echo -e "Current remote path: ${CYAN}$BACKUP_REMOTE_DIR${NC}"
-                echo ""
-                local current_hostname=$(hostname)
-                echo -e "System hostname: ${CYAN}${current_hostname}${NC}"
-                read -p "New VPS identifier [${BACKUP_HOSTNAME}] (press Enter to keep current): " new_hostname
-                if [ -n "$new_hostname" ]; then
-                    # Sanitize hostname
-                    new_hostname=$(echo "$new_hostname" | tr '[:upper:]' '[:lower:]' | sed 's/[^a-z0-9-]/-/g' | sed 's/--*/-/g' | sed 's/^-//;s/-$//')
-
-                    echo ""
-                    log_success "VPS identifier will be updated to: ${new_hostname}"
-
-                    # Automatically update remote path to match new identifier
-                    echo ""
-                    echo -e "${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
-                    echo -e "${YELLOW}Automatic Path Update${NC}"
-                    echo -e "${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
-
-                    local old_remote=$(echo "$BACKUP_REMOTE_DIR" | cut -d':' -f1)
-                    local new_suggested_path="${old_remote}:vps-${new_hostname}-backup"
-
-                    echo -e "Old path:  ${CYAN}$BACKUP_REMOTE_DIR${NC}"
-                    echo -e "New path:  ${GREEN}${new_suggested_path}${NC}"
-                    echo ""
-                    echo -e "${YELLOW}ℹ️  Remote path will be automatically updated to match the new identifier${NC}"
-                    echo ""
-                    read -p "Keep old remote path instead? [y/N] (press Enter to auto-update): " keep_old
-
-                    if [[ $keep_old =~ ^[Yy]$ ]]; then
-                        # Only update hostname, keep old path
-                        BACKUP_HOSTNAME="$new_hostname"
-                        save_config
-                        create_backup_script
-                        echo ""
-                        log_success "VPS identifier updated to: $BACKUP_HOSTNAME"
-                        log_warning "Remote path unchanged: $BACKUP_REMOTE_DIR"
-                        echo ""
-                        log_info "Note: Your backups will still use the old path"
-                    else
-                        # Update both hostname and remote path (default behavior)
-                        BACKUP_HOSTNAME="$new_hostname"
-                        BACKUP_REMOTE_DIR="$new_suggested_path"
-                        save_config
-                        create_backup_script
-                        echo ""
-                        log_success "✓ VPS identifier updated to: $BACKUP_HOSTNAME"
-                        log_success "✓ Remote path updated to: $BACKUP_REMOTE_DIR"
-                        echo ""
-                        log_warning "Important: Old backups at the previous path will NOT be moved"
-                        log_info "If you need to access old backups, they remain at: $old_remote:vps-backup"
-                    fi
-                fi
+                read -p "Press Enter to continue..."
                 ;;
 
             2)
@@ -1626,6 +1576,84 @@ edit_configuration() {
                 ;;
 
             3)
+                # Edit max backups
+                echo ""
+                echo -e "Current max backups: ${CYAN}$BACKUP_MAX_KEEP${NC}"
+                read -p "New max backups to keep: " new_max
+                if [[ $new_max =~ ^[0-9]+$ ]]; then
+                    BACKUP_MAX_KEEP="$new_max"
+                    save_config
+                    create_backup_script
+                    log_success "Max backups updated to $new_max"
+                else
+                    log_error "Invalid number"
+                fi
+                ;;
+
+            4)
+                # Setup cron
+                setup_cron
+                ;;
+
+            5)
+                # Edit VPS identifier
+                echo ""
+                echo -e "Current VPS identifier: ${CYAN}$BACKUP_HOSTNAME${NC}"
+                echo -e "Current remote path: ${CYAN}$BACKUP_REMOTE_DIR${NC}"
+                echo ""
+                local current_hostname=$(hostname)
+                echo -e "System hostname: ${CYAN}${current_hostname}${NC}"
+                read -p "New VPS identifier [${BACKUP_HOSTNAME}] (press Enter to keep current): " new_hostname
+                if [ -n "$new_hostname" ]; then
+                    # Sanitize hostname
+                    new_hostname=$(echo "$new_hostname" | tr '[:upper:]' '[:lower:]' | sed 's/[^a-z0-9-]/-/g' | sed 's/--*/-/g' | sed 's/^-//;s/-$//')
+
+                    echo ""
+                    log_success "VPS identifier will be updated to: ${new_hostname}"
+
+                    # Automatically update remote path to match new identifier
+                    echo ""
+                    echo -e "${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+                    echo -e "${YELLOW}Automatic Path Update${NC}"
+                    echo -e "${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+
+                    local old_remote=$(echo "$BACKUP_REMOTE_DIR" | cut -d':' -f1)
+                    local new_suggested_path="${old_remote}:vps-${new_hostname}-backup"
+
+                    echo -e "Old path:  ${CYAN}$BACKUP_REMOTE_DIR${NC}"
+                    echo -e "New path:  ${GREEN}${new_suggested_path}${NC}"
+                    echo ""
+                    echo -e "${YELLOW}ℹ️  Remote path will be automatically updated to match the new identifier${NC}"
+                    echo ""
+                    read -p "Keep old remote path instead? [y/N] (press Enter to auto-update): " keep_old
+
+                    if [[ $keep_old =~ ^[Yy]$ ]]; then
+                        # Only update hostname, keep old path
+                        BACKUP_HOSTNAME="$new_hostname"
+                        save_config
+                        create_backup_script
+                        echo ""
+                        log_success "VPS identifier updated to: $BACKUP_HOSTNAME"
+                        log_warning "Remote path unchanged: $BACKUP_REMOTE_DIR"
+                        echo ""
+                        log_info "Note: Your backups will still use the old path"
+                    else
+                        # Update both hostname and remote path (default behavior)
+                        BACKUP_HOSTNAME="$new_hostname"
+                        BACKUP_REMOTE_DIR="$new_suggested_path"
+                        save_config
+                        create_backup_script
+                        echo ""
+                        log_success "✓ VPS identifier updated to: $BACKUP_HOSTNAME"
+                        log_success "✓ Remote path updated to: $BACKUP_REMOTE_DIR"
+                        echo ""
+                        log_warning "Important: Old backups at the previous path will NOT be moved"
+                        log_info "If you need to access old backups, they remain at: $old_remote:vps-backup"
+                    fi
+                fi
+                ;;
+
+            6)
                 # Edit remote directory
                 echo ""
                 echo -e "Current remote: ${CYAN}$BACKUP_REMOTE_DIR${NC}"
@@ -1638,7 +1666,7 @@ edit_configuration() {
                 fi
                 ;;
 
-            4)
+            7)
                 # Change encryption password
                 echo ""
                 log_warning "Changing password will not re-encrypt existing backups"
@@ -1656,7 +1684,7 @@ edit_configuration() {
                 fi
                 ;;
 
-            5)
+            8)
                 # Edit Telegram settings
                 echo ""
                 if [ -n "$TG_BOT_TOKEN" ] && [ -n "$TG_CHAT_ID" ]; then
@@ -1696,22 +1724,7 @@ edit_configuration() {
                 fi
                 ;;
 
-            6)
-                # Edit max backups
-                echo ""
-                echo -e "Current max backups: ${CYAN}$BACKUP_MAX_KEEP${NC}"
-                read -p "New max backups to keep: " new_max
-                if [[ $new_max =~ ^[0-9]+$ ]]; then
-                    BACKUP_MAX_KEEP="$new_max"
-                    save_config
-                    create_backup_script
-                    log_success "Max backups updated to $new_max"
-                else
-                    log_error "Invalid number"
-                fi
-                ;;
-
-            7)
+            9)
                 # Edit paths
                 echo ""
                 echo -e "Current log file:  ${CYAN}$BACKUP_LOG_FILE${NC}"
@@ -1728,18 +1741,6 @@ edit_configuration() {
                 save_config
                 create_backup_script
                 log_success "Paths updated"
-                ;;
-
-            8)
-                # View configuration
-                show_status
-                echo ""
-                read -p "Press Enter to continue..."
-                ;;
-
-            9)
-                # Setup cron
-                setup_cron
                 ;;
 
             10)
@@ -1785,7 +1786,7 @@ edit_configuration() {
                 read -p "Press Enter to continue..."
                 ;;
 
-            r|R)
+            11)
                 # Regenerate backup script
                 echo ""
                 echo -e "${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
