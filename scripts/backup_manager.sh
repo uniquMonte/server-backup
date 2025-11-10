@@ -20,6 +20,10 @@ BACKUP_ENV="/usr/local/bin/vps-backup.env"
 DEFAULT_LOG_FILE="/var/log/vps-backup.log"
 DEFAULT_TMP_DIR="/tmp/vps-backups"
 
+# Determine scripts path for locating restore script
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+SCRIPTS_PATH="$SCRIPT_DIR"
+
 log_info() {
     echo -e "${BLUE}[INFO]${NC} $1"
 }
