@@ -1520,11 +1520,7 @@ edit_configuration() {
 
                 if [[ ! $confirm =~ ^[Nn]$ ]]; then
                     echo ""
-                    log_info "Regenerating backup script..."
                     create_backup_script
-                    echo ""
-                    log_success "Backup script regenerated successfully!"
-                    log_info "Script location: ${BACKUP_SCRIPT}"
                 else
                     log_info "Regeneration cancelled"
                 fi
@@ -1598,11 +1594,7 @@ main() {
             echo -e "  Config file: ${CYAN}${BACKUP_ENV}${NC}"
             echo -e "  Script path: ${CYAN}${BACKUP_SCRIPT}${NC}"
             echo ""
-            log_info "Regenerating backup script with latest code..."
             create_backup_script
-            echo ""
-            log_success "Backup script regenerated successfully!"
-            log_info "Script location: ${BACKUP_SCRIPT}"
             ;;
         restore)
             # Launch restore tool
