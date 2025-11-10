@@ -55,7 +55,8 @@ list_backups() {
         return 1
     fi
 
-    local backups=$(rclone lsl "${BACKUP_REMOTE_DIR}" 2>/dev/null | grep "backup-.*\.tar\.gz\.enc")
+    # Only show .tar.gz.enc files (not .sha256), sorted in descending order (newest first)
+    local backups=$(rclone lsl "${BACKUP_REMOTE_DIR}" 2>/dev/null | grep "backup-.*\.tar\.gz\.enc$" | sort -r)
 
     if [ -z "$backups" ]; then
         log_warning "No backups found in ${BACKUP_REMOTE_DIR}"
@@ -78,8 +79,8 @@ restore_backup() {
     echo -e "${CYAN}Restore Backup${NC}"
     echo -e "${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
 
-    # List backups
-    local backups=$(rclone lsf "${BACKUP_REMOTE_DIR}" 2>/dev/null | grep "backup-.*\.tar\.gz\.enc")
+    # List backups - only .tar.gz.enc files (not .sha256), sorted descending (newest first)
+    local backups=$(rclone lsf "${BACKUP_REMOTE_DIR}" 2>/dev/null | grep "backup-.*\.tar\.gz\.enc$" | sort -r)
 
     if [ -z "$backups" ]; then
         log_error "No backups found"
@@ -97,7 +98,8 @@ restore_backup() {
     done <<< "$backups"
 
     echo ""
-    read -p "Select backup number to restore [1-${#backup_array[@]}]: " selection
+    read -p "Select backup number to restore [1-${#backup_array[@]}] (press Enter for latest): " selection
+    selection="${selection:-1}"  # Default to 1 (latest backup)
 
     if ! [[ $selection =~ ^[0-9]+$ ]] || [ $selection -lt 1 ] || [ $selection -gt ${#backup_array[@]} ]; then
         log_error "Invalid selection"
@@ -226,8 +228,8 @@ verify_backup() {
     echo -e "${CYAN}Verify Backup Integrity${NC}"
     echo -e "${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
 
-    # List backups
-    local backups=$(rclone lsf "${BACKUP_REMOTE_DIR}" 2>/dev/null | grep "backup-.*\.tar\.gz\.enc")
+    # List backups - only .tar.gz.enc files (not .sha256), sorted descending (newest first)
+    local backups=$(rclone lsf "${BACKUP_REMOTE_DIR}" 2>/dev/null | grep "backup-.*\.tar\.gz\.enc$" | sort -r)
 
     if [ -z "$backups" ]; then
         log_error "No backups found"
@@ -245,7 +247,8 @@ verify_backup() {
     done <<< "$backups"
 
     echo ""
-    read -p "Select backup to verify [1-${#backup_array[@]}]: " selection
+    read -p "Select backup to verify [1-${#backup_array[@]}] (press Enter for latest): " selection
+    selection="${selection:-1}"  # Default to 1 (latest backup)
 
     if ! [[ $selection =~ ^[0-9]+$ ]] || [ $selection -lt 1 ] || [ $selection -gt ${#backup_array[@]} ]; then
         log_error "Invalid selection"
