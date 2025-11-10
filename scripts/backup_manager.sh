@@ -127,6 +127,40 @@ show_status() {
         echo ""
         echo -e "${GREEN}Configuration Details:${NC}"
         echo -e "  Remote Directory:  ${CYAN}${BACKUP_REMOTE_DIR:-Not set}${NC}"
+
+        # Check and display backup schedule
+        if crontab -l 2>/dev/null | grep -q "$BACKUP_SCRIPT"; then
+            local cron_line=$(crontab -l 2>/dev/null | grep "$BACKUP_SCRIPT" | head -1)
+            local cron_schedule=$(echo "$cron_line" | awk '{print $1, $2, $3, $4, $5}')
+
+            # Parse cron schedule to human-readable format
+            local cron_desc=""
+            if [[ "$cron_schedule" =~ ^0\ ([0-9]+)\ \*\ \*\ \*$ ]]; then
+                local hour="${BASH_REMATCH[1]}"
+                cron_desc="Daily at ${hour}:00"
+            elif [[ "$cron_schedule" =~ ^0\ \*/([0-9]+)\ \*\ \*\ \*$ ]]; then
+                local interval="${BASH_REMATCH[1]}"
+                cron_desc="Every ${interval} hours"
+            elif [[ "$cron_schedule" =~ ^0\ ([0-9]+)\ \*\ \*\ ([0-9]+)$ ]]; then
+                local hour="${BASH_REMATCH[1]}"
+                local day="${BASH_REMATCH[2]}"
+                case $day in
+                    0) cron_desc="Weekly (Sunday ${hour}:00)" ;;
+                    1) cron_desc="Weekly (Monday ${hour}:00)" ;;
+                    2) cron_desc="Weekly (Tuesday ${hour}:00)" ;;
+                    3) cron_desc="Weekly (Wednesday ${hour}:00)" ;;
+                    4) cron_desc="Weekly (Thursday ${hour}:00)" ;;
+                    5) cron_desc="Weekly (Friday ${hour}:00)" ;;
+                    6) cron_desc="Weekly (Saturday ${hour}:00)" ;;
+                esac
+            else
+                cron_desc="Custom ($cron_schedule)"
+            fi
+            echo -e "  Backup Schedule:   ${GREEN}${cron_desc}${NC}"
+        else
+            echo -e "  Backup Schedule:   ${YELLOW}Not scheduled${NC}"
+        fi
+
         echo -e "  Max Backups:       ${CYAN}${BACKUP_MAX_KEEP:-3}${NC}"
 
         # Encryption status
