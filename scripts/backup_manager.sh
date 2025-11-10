@@ -1272,38 +1272,44 @@ edit_configuration() {
                     echo ""
                     log_success "VPS identifier will be updated to: ${new_hostname}"
 
-                    # Ask if user wants to update remote path as well
+                    # Automatically update remote path to match new identifier
                     echo ""
-                    echo -e "${YELLOW}Update remote path to match new identifier?${NC}"
+                    echo -e "${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+                    echo -e "${YELLOW}Automatic Path Update${NC}"
+                    echo -e "${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
 
                     local old_remote=$(echo "$BACKUP_REMOTE_DIR" | cut -d':' -f1)
                     local new_suggested_path="${old_remote}:vps-${new_hostname}-backup"
 
-                    echo -e "Current path: ${CYAN}$BACKUP_REMOTE_DIR${NC}"
-                    echo -e "Suggested new path: ${GREEN}${new_suggested_path}${NC}"
+                    echo -e "Old path:  ${CYAN}$BACKUP_REMOTE_DIR${NC}"
+                    echo -e "New path:  ${GREEN}${new_suggested_path}${NC}"
                     echo ""
+                    echo -e "${YELLOW}ℹ️  Remote path will be automatically updated to match the new identifier${NC}"
+                    echo ""
+                    read -p "Keep old remote path instead? [y/N] (press Enter to auto-update): " keep_old
 
-                    read -p "Update remote path to match new identifier? [Y/n] (press Enter to confirm): " update_path
-
-                    if [[ ! $update_path =~ ^[Nn]$ ]]; then
-                        # Update both hostname and remote path
+                    if [[ $keep_old =~ ^[Yy]$ ]]; then
+                        # Only update hostname, keep old path
+                        BACKUP_HOSTNAME="$new_hostname"
+                        save_config
+                        create_backup_script
+                        echo ""
+                        log_success "VPS identifier updated to: $BACKUP_HOSTNAME"
+                        log_warning "Remote path unchanged: $BACKUP_REMOTE_DIR"
+                        echo ""
+                        log_info "Note: Your backups will still use the old path"
+                    else
+                        # Update both hostname and remote path (default behavior)
                         BACKUP_HOSTNAME="$new_hostname"
                         BACKUP_REMOTE_DIR="$new_suggested_path"
                         save_config
                         create_backup_script
                         echo ""
-                        log_success "VPS identifier updated to: $BACKUP_HOSTNAME"
-                        log_success "Remote path updated to: $BACKUP_REMOTE_DIR"
+                        log_success "✓ VPS identifier updated to: $BACKUP_HOSTNAME"
+                        log_success "✓ Remote path updated to: $BACKUP_REMOTE_DIR"
                         echo ""
                         log_warning "Important: Old backups at the previous path will NOT be moved"
-                        log_info "If you need to keep old backups, manually move them in cloud storage"
-                    else
-                        # Only update hostname, keep old path
-                        BACKUP_HOSTNAME="$new_hostname"
-                        save_config
-                        echo ""
-                        log_success "VPS identifier updated to: $BACKUP_HOSTNAME"
-                        log_info "Remote path unchanged: $BACKUP_REMOTE_DIR"
+                        log_info "If you need to access old backups, they remain at: $old_remote:vps-backup"
                     fi
                 fi
                 ;;
