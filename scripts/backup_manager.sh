@@ -1554,22 +1554,23 @@ uninstall_backup() {
     echo -e "  • Manager script: ${CYAN}/usr/local/bin/backup_manager.sh${NC}"
     echo -e "  • Restore script: ${CYAN}/usr/local/bin/backup_restore.sh${NC}"
     echo -e "  • Cron jobs for automated backups"
+
+    # Check if log file exists and show it
+    local log_file_path=""
+    if [ -f "$BACKUP_ENV" ]; then
+        source "$BACKUP_ENV"
+        if [ -n "$BACKUP_LOG_FILE" ] && [ -f "$BACKUP_LOG_FILE" ]; then
+            log_file_path="$BACKUP_LOG_FILE"
+            echo -e "  • Log file: ${CYAN}${BACKUP_LOG_FILE}${NC}"
+        fi
+    fi
+
     echo ""
     echo -e "${GREEN}What will NOT be removed:${NC}"
     echo -e "  • rclone configuration and program"
     echo -e "  • Remote backup files in cloud storage"
     echo ""
 
-    # Check if log file exists
-    if [ -f "$BACKUP_ENV" ]; then
-        source "$BACKUP_ENV"
-        if [ -n "$BACKUP_LOG_FILE" ] && [ -f "$BACKUP_LOG_FILE" ]; then
-            echo -e "${YELLOW}Log file found:${NC} ${CYAN}${BACKUP_LOG_FILE}${NC}"
-            read -p "Do you want to remove log file? [y/N]: " remove_logs
-        fi
-    fi
-
-    echo ""
     log_warning "This action cannot be undone!"
     read -p "Are you sure you want to uninstall? [y/N]: " confirm
 
@@ -1606,10 +1607,10 @@ uninstall_backup() {
         log_success "Restore script removed"
     fi
 
-    # Remove log file if user confirmed
-    if [[ $remove_logs =~ ^[Yy]$ ]] && [ -n "$BACKUP_LOG_FILE" ] && [ -f "$BACKUP_LOG_FILE" ]; then
-        rm -f "$BACKUP_LOG_FILE"
-        log_success "Log file removed: $BACKUP_LOG_FILE"
+    # Remove log file
+    if [ -n "$log_file_path" ] && [ -f "$log_file_path" ]; then
+        rm -f "$log_file_path"
+        log_success "Log file removed: $log_file_path"
     fi
 
     # Remove manager script itself (last step)
