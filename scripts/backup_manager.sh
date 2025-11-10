@@ -1254,9 +1254,10 @@ edit_configuration() {
         echo -e "  ${CYAN}7.${NC} Log and temp paths"
         echo -e "  ${CYAN}8.${NC} View current configuration"
         echo -e "  ${CYAN}9.${NC} Setup/modify backup schedule (cron)"
+        echo -e "  ${CYAN}r.${NC} Regenerate backup script (apply latest translations)"
         echo -e "  ${CYAN}0.${NC} Return to main menu"
         echo ""
-        read -p "Select option [0-9]: " edit_choice
+        read -p "Select option [0-9,r]: " edit_choice
 
         case $edit_choice in
             1)
@@ -1500,6 +1501,38 @@ edit_configuration() {
                 setup_cron
                 ;;
 
+            r|R)
+                # Regenerate backup script
+                echo ""
+                echo -e "${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+                echo -e "${CYAN}Regenerate Backup Script${NC}"
+                echo -e "${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+                echo ""
+                log_info "This will regenerate the backup script based on your current configuration"
+                echo ""
+                echo -e "${GREEN}What this does:${NC}"
+                echo -e "  • Applies latest code updates and translations"
+                echo -e "  • Uses your current configuration from: ${CYAN}${BACKUP_ENV}${NC}"
+                echo -e "  • Generates new script at: ${CYAN}${BACKUP_SCRIPT}${NC}"
+                echo -e "  • All output messages will be in English"
+                echo ""
+                read -p "Continue? [Y/n] (press Enter to continue): " confirm
+
+                if [[ ! $confirm =~ ^[Nn]$ ]]; then
+                    echo ""
+                    log_info "Regenerating backup script..."
+                    create_backup_script
+                    echo ""
+                    log_success "Backup script regenerated successfully!"
+                    log_info "Script location: ${BACKUP_SCRIPT}"
+                    log_info "You can now run backups with updated translations"
+                else
+                    log_info "Regeneration cancelled"
+                fi
+                echo ""
+                read -p "Press Enter to continue..."
+                ;;
+
             0)
                 return 0
                 ;;
@@ -1545,6 +1578,33 @@ main() {
             ;;
         install-deps)
             install_rclone
+            ;;
+        regenerate)
+            # Regenerate backup script with latest code
+            if ! is_configured; then
+                log_error "Backup is not configured"
+                log_info "Please run configuration wizard first"
+                return 1
+            fi
+
+            load_config
+            echo ""
+            echo -e "${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+            echo -e "${CYAN}Regenerate Backup Script${NC}"
+            echo -e "${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+            echo ""
+            log_info "This will regenerate the backup script based on your current configuration"
+            echo ""
+            echo -e "${GREEN}Configuration details:${NC}"
+            echo -e "  Config file: ${CYAN}${BACKUP_ENV}${NC}"
+            echo -e "  Script path: ${CYAN}${BACKUP_SCRIPT}${NC}"
+            echo ""
+            log_info "Regenerating backup script with latest code and translations..."
+            create_backup_script
+            echo ""
+            log_success "Backup script regenerated successfully!"
+            log_info "Script location: ${BACKUP_SCRIPT}"
+            log_info "All messages are now in English"
             ;;
         restore)
             # Launch restore tool
@@ -1616,7 +1676,7 @@ main() {
             ;;
         *)
             log_error "Unknown command: $1"
-            echo "Usage: $0 {status|configure|edit|run|restore|list|logs|test|cron|menu}"
+            echo "Usage: $0 {status|configure|edit|run|restore|list|logs|test|cron|regenerate|menu}"
             echo ""
             echo "Commands:"
             echo "  status     - Show backup configuration status"
@@ -1628,6 +1688,7 @@ main() {
             echo "  logs       - View backup logs"
             echo "  test       - Test backup configuration"
             echo "  cron       - Setup automatic backup schedule"
+            echo "  regenerate - Regenerate backup script (updates translations)"
             echo "  menu       - Interactive menu (default)"
             exit 1
             ;;
