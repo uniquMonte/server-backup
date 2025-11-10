@@ -1260,30 +1260,51 @@ setup_cron() {
     log_info "Setting up automatic backup schedule..."
     echo ""
 
-    echo -e "${YELLOW}Common schedules:${NC}"
-    echo -e "  1. Daily at 2:00 AM      (0 2 * * *)"
-    echo -e "  2. Daily at 3:00 AM      (0 3 * * *)"
-    echo -e "  3. Every 12 hours        (0 */12 * * *)"
-    echo -e "  4. Weekly (Sunday 2 AM)  (0 2 * * 0)"
-    echo -e "  5. Custom schedule"
-    echo -e "  6. Remove scheduled backup"
+    echo -e "${YELLOW}Select backup time:${NC}"
+    echo -e "  ${CYAN}1.${NC} Daily at 1:00 AM      (0 1 * * *)"
+    echo -e "  ${CYAN}2.${NC} Daily at 2:00 AM      (0 2 * * *) ${GREEN}[Recommended]${NC}"
+    echo -e "  ${CYAN}3.${NC} Daily at 3:00 AM      (0 3 * * *)"
+    echo -e "  ${CYAN}4.${NC} Daily at 4:00 AM      (0 4 * * *)"
+    echo -e "  ${CYAN}5.${NC} Daily at 5:00 AM      (0 5 * * *)"
+    echo -e "  ${CYAN}6.${NC} Daily at 6:00 AM      (0 6 * * *)"
+    echo -e "  ${CYAN}7.${NC} Daily at 7:00 AM      (0 7 * * *)"
+    echo -e "  ${CYAN}8.${NC} Daily at 8:00 AM      (0 8 * * *)"
+    echo -e "  ${CYAN}9.${NC} Custom schedule"
+    echo -e "  ${RED}10.${NC} Remove scheduled backup"
     echo ""
 
-    read -p "Select option [1-6]: " schedule_option
+    read -p "Select option [1-10] (press Enter for option 2): " schedule_option
+    schedule_option="${schedule_option:-2}"  # Default to option 2 (2:00 AM)
 
     local cron_schedule=""
     case $schedule_option in
-        1) cron_schedule="0 2 * * *" ;;
-        2) cron_schedule="0 3 * * *" ;;
-        3) cron_schedule="0 */12 * * *" ;;
-        4) cron_schedule="0 2 * * 0" ;;
-        5)
-            read -p "Enter cron schedule (e.g., '0 2 * * *'): " cron_schedule
+        1) cron_schedule="0 1 * * *" ;;
+        2) cron_schedule="0 2 * * *" ;;
+        3) cron_schedule="0 3 * * *" ;;
+        4) cron_schedule="0 4 * * *" ;;
+        5) cron_schedule="0 5 * * *" ;;
+        6) cron_schedule="0 6 * * *" ;;
+        7) cron_schedule="0 7 * * *" ;;
+        8) cron_schedule="0 8 * * *" ;;
+        9)
+            echo ""
+            log_info "Enter cron schedule in format: minute hour day month weekday"
+            log_info "Examples: '0 2 * * *' (daily 2 AM), '30 14 * * 5' (Friday 2:30 PM)"
+            echo ""
+            read -p "Enter cron schedule: " cron_schedule
+            if [ -z "$cron_schedule" ]; then
+                log_error "No schedule entered"
+                return 1
+            fi
             ;;
-        6)
+        10)
             # Remove existing cron job
-            crontab -l 2>/dev/null | grep -v "$BACKUP_SCRIPT" | crontab -
-            log_success "Scheduled backup removed"
+            if crontab -l 2>/dev/null | grep -q "$BACKUP_SCRIPT"; then
+                crontab -l 2>/dev/null | grep -v "$BACKUP_SCRIPT" | crontab -
+                log_success "Scheduled backup removed"
+            else
+                log_info "No scheduled backup found"
+            fi
             return 0
             ;;
         *)
