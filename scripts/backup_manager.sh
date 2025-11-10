@@ -126,11 +126,7 @@ show_status() {
 
         echo ""
         echo -e "${GREEN}Configuration Details:${NC}"
-        echo -e "  Backup Script:     ${CYAN}${BACKUP_SCRIPT}${NC}"
-        echo -e "  Config File:       ${CYAN}${BACKUP_ENV}${NC}"
         echo -e "  Remote Directory:  ${CYAN}${BACKUP_REMOTE_DIR:-Not set}${NC}"
-        echo -e "  Log File:          ${CYAN}${BACKUP_LOG_FILE:-$DEFAULT_LOG_FILE}${NC}"
-        echo -e "  Temp Directory:    ${CYAN}${BACKUP_TMP_DIR:-$DEFAULT_TMP_DIR}${NC}"
         echo -e "  Max Backups:       ${CYAN}${BACKUP_MAX_KEEP:-3}${NC}"
 
         # Encryption status
@@ -148,6 +144,11 @@ show_status() {
         else
             echo -e "  Telegram Notify:   ${YELLOW}Disabled${NC}"
         fi
+
+        echo -e "  Backup Script:     ${CYAN}${BACKUP_SCRIPT}${NC}"
+        echo -e "  Config File:       ${CYAN}${BACKUP_ENV}${NC}"
+        echo -e "  Log File:          ${CYAN}${BACKUP_LOG_FILE:-$DEFAULT_LOG_FILE}${NC}"
+        echo -e "  Temp Directory:    ${CYAN}${BACKUP_TMP_DIR:-$DEFAULT_TMP_DIR}${NC}"
 
         # Check if rclone remote is configured
         echo ""
