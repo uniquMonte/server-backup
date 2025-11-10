@@ -1254,9 +1254,10 @@ edit_configuration() {
         echo -e "  ${CYAN}7.${NC} Log and temp paths"
         echo -e "  ${CYAN}8.${NC} View current configuration"
         echo -e "  ${CYAN}9.${NC} Setup/modify backup schedule (cron)"
+        echo -e "  ${CYAN}r.${NC} Regenerate backup script (apply latest translations)"
         echo -e "  ${CYAN}0.${NC} Return to main menu"
         echo ""
-        read -p "Select option [0-9]: " edit_choice
+        read -p "Select option [0-9,r]: " edit_choice
 
         case $edit_choice in
             1)
@@ -1498,6 +1499,19 @@ edit_configuration() {
             9)
                 # Setup cron
                 setup_cron
+                ;;
+
+            r|R)
+                # Regenerate backup script
+                echo ""
+                log_info "Regenerating backup script with latest translations..."
+                create_backup_script
+                echo ""
+                log_success "Backup script regenerated successfully!"
+                log_info "All messages are now in English"
+                log_info "Script location: ${BACKUP_SCRIPT}"
+                echo ""
+                read -p "Press Enter to continue..."
                 ;;
 
             0)
