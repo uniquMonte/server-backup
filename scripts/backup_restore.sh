@@ -349,9 +349,10 @@ main() {
                 echo -e "  ${CYAN}1.${NC} List available backups"
                 echo -e "  ${CYAN}2.${NC} Restore backup"
                 echo -e "  ${CYAN}3.${NC} Verify backup integrity"
-                echo -e "  ${CYAN}0.${NC} Exit"
+                echo -e "  ${CYAN}0.${NC} Exit (default)"
                 echo ""
-                read -p "Select action [0-3]: " action
+                read -p "Select action [0-3] (press Enter to exit): " action
+                action="${action:-0}"  # Default to option 0 (exit)
 
                 case $action in
                     1) list_backups ;;
