@@ -1572,7 +1572,8 @@ uninstall_backup() {
     echo ""
 
     log_warning "This action cannot be undone!"
-    read -p "Are you sure you want to uninstall? [y/N]: " confirm
+    read -p "Are you sure you want to uninstall? [y/N] (press Enter to cancel): " confirm
+    confirm="${confirm:-N}"  # Default to N (cancel)
 
     if [[ ! $confirm =~ ^[Yy]$ ]]; then
         log_info "Uninstall cancelled"
