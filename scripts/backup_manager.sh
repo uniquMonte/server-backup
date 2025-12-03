@@ -280,7 +280,17 @@ show_status() {
             echo -e "  Backup Schedule:   ${YELLOW}Not scheduled${NC}"
         fi
 
-        echo -e "  Max Backups:       ${CYAN}${BACKUP_MAX_KEEP:-3}${NC}"
+        # Show retention policy based on backup method
+        if [ "$BACKUP_METHOD" = "incremental" ]; then
+            echo -e "  ${GREEN}Retention Policy:${NC}"
+            [ -n "$RESTIC_KEEP_LAST" ] && [ "$RESTIC_KEEP_LAST" != "0" ] && echo -e "    Keep Last:       ${CYAN}${RESTIC_KEEP_LAST} backups${NC}"
+            [ -n "$RESTIC_KEEP_DAILY" ] && [ "$RESTIC_KEEP_DAILY" != "0" ] && echo -e "    Keep Daily:      ${CYAN}${RESTIC_KEEP_DAILY} days${NC}"
+            [ -n "$RESTIC_KEEP_WEEKLY" ] && [ "$RESTIC_KEEP_WEEKLY" != "0" ] && echo -e "    Keep Weekly:     ${CYAN}${RESTIC_KEEP_WEEKLY} weeks${NC}"
+            [ -n "$RESTIC_KEEP_MONTHLY" ] && [ "$RESTIC_KEEP_MONTHLY" != "0" ] && echo -e "    Keep Monthly:    ${CYAN}${RESTIC_KEEP_MONTHLY} months${NC}"
+            [ -n "$RESTIC_KEEP_YEARLY" ] && [ "$RESTIC_KEEP_YEARLY" != "0" ] && echo -e "    Keep Yearly:     ${CYAN}${RESTIC_KEEP_YEARLY} years${NC}"
+        else
+            echo -e "  Max Backups:       ${CYAN}${BACKUP_MAX_KEEP:-3}${NC}"
+        fi
 
         # Encryption status
         if [ -n "$BACKUP_PASSWORD" ]; then
@@ -874,8 +884,33 @@ configure_backup() {
     log_info "Step 7/9: Additional Settings"
     echo ""
 
-    read -p "Max backups to keep [${BACKUP_MAX_KEEP:-3}] (press Enter for default): " max_keep
-    BACKUP_MAX_KEEP="${max_keep:-${BACKUP_MAX_KEEP:-3}}"
+    # Retention policy configuration
+    if [ "$BACKUP_METHOD" = "incremental" ]; then
+        echo -e "${GREEN}Restic Retention Policy${NC}"
+        echo "Configure how many backups to keep for different time periods."
+        echo "Leave empty to skip that retention policy."
+        echo ""
+
+        read -p "Keep last N backups [${RESTIC_KEEP_LAST:-7}]: " keep_last
+        RESTIC_KEEP_LAST="${keep_last:-${RESTIC_KEEP_LAST:-7}}"
+
+        read -p "Keep daily backups for N days [${RESTIC_KEEP_DAILY:-30}]: " keep_daily
+        RESTIC_KEEP_DAILY="${keep_daily:-${RESTIC_KEEP_DAILY:-30}}"
+
+        read -p "Keep weekly backups for N weeks [${RESTIC_KEEP_WEEKLY:-8}]: " keep_weekly
+        RESTIC_KEEP_WEEKLY="${keep_weekly:-${RESTIC_KEEP_WEEKLY:-8}}"
+
+        read -p "Keep monthly backups for N months [${RESTIC_KEEP_MONTHLY:-12}]: " keep_monthly
+        RESTIC_KEEP_MONTHLY="${keep_monthly:-${RESTIC_KEEP_MONTHLY:-12}}"
+
+        read -p "Keep yearly backups for N years [${RESTIC_KEEP_YEARLY:-3}]: " keep_yearly
+        RESTIC_KEEP_YEARLY="${keep_yearly:-${RESTIC_KEEP_YEARLY:-3}}"
+
+        echo ""
+    else
+        read -p "Max backups to keep [${BACKUP_MAX_KEEP:-3}] (press Enter for default): " max_keep
+        BACKUP_MAX_KEEP="${max_keep:-${BACKUP_MAX_KEEP:-3}}"
+    fi
 
     read -p "Log file path [${BACKUP_LOG_FILE:-$DEFAULT_LOG_FILE}] (press Enter for default): " log_file
     BACKUP_LOG_FILE="${log_file:-${BACKUP_LOG_FILE:-$DEFAULT_LOG_FILE}}"
@@ -1009,7 +1044,18 @@ configure_backup() {
     echo -e "  Backup script:     ${CYAN}$BACKUP_SCRIPT${NC}"
     echo -e "  Log file:          ${CYAN}$BACKUP_LOG_FILE${NC}"
     echo -e "  Remote directory:  ${CYAN}$BACKUP_REMOTE_DIR${NC}"
-    echo -e "  Max backups:       ${CYAN}$BACKUP_MAX_KEEP${NC}"
+
+    # Show retention policy based on backup method
+    if [ "$BACKUP_METHOD" = "incremental" ]; then
+        echo -e "  ${GREEN}Retention Policy:${NC}"
+        [ -n "$RESTIC_KEEP_LAST" ] && [ "$RESTIC_KEEP_LAST" != "0" ] && echo -e "    Keep Last:       ${CYAN}${RESTIC_KEEP_LAST} backups${NC}"
+        [ -n "$RESTIC_KEEP_DAILY" ] && [ "$RESTIC_KEEP_DAILY" != "0" ] && echo -e "    Keep Daily:      ${CYAN}${RESTIC_KEEP_DAILY} days${NC}"
+        [ -n "$RESTIC_KEEP_WEEKLY" ] && [ "$RESTIC_KEEP_WEEKLY" != "0" ] && echo -e "    Keep Weekly:     ${CYAN}${RESTIC_KEEP_WEEKLY} weeks${NC}"
+        [ -n "$RESTIC_KEEP_MONTHLY" ] && [ "$RESTIC_KEEP_MONTHLY" != "0" ] && echo -e "    Keep Monthly:    ${CYAN}${RESTIC_KEEP_MONTHLY} months${NC}"
+        [ -n "$RESTIC_KEEP_YEARLY" ] && [ "$RESTIC_KEEP_YEARLY" != "0" ] && echo -e "    Keep Yearly:     ${CYAN}${RESTIC_KEEP_YEARLY} years${NC}"
+    else
+        echo -e "  Max backups:       ${CYAN}$BACKUP_MAX_KEEP${NC}"
+    fi
 
     echo ""
     read -p "Test backup configuration now? [Y/n] (press Enter to confirm): " test
@@ -1063,6 +1109,13 @@ TG_CHAT_ID="$TG_CHAT_ID"
 BACKUP_MAX_KEEP="$BACKUP_MAX_KEEP"
 BACKUP_LOG_FILE="$BACKUP_LOG_FILE"
 BACKUP_TMP_DIR="$BACKUP_TMP_DIR"
+
+# Restic retention policy (for incremental backups)
+RESTIC_KEEP_LAST="${RESTIC_KEEP_LAST:-7}"
+RESTIC_KEEP_DAILY="${RESTIC_KEEP_DAILY:-30}"
+RESTIC_KEEP_WEEKLY="${RESTIC_KEEP_WEEKLY:-8}"
+RESTIC_KEEP_MONTHLY="${RESTIC_KEEP_MONTHLY:-12}"
+RESTIC_KEEP_YEARLY="${RESTIC_KEEP_YEARLY:-3}"
 EOF
 
     chmod 600 "$BACKUP_ENV"
@@ -1215,11 +1268,19 @@ DATA_ADDED=$(echo "$BACKUP_OUTPUT" | grep "Added to the repository:" | awk '{pri
 log_and_notify "Backup snapshot created successfully"
 
 # Cleanup old snapshots
-log_and_notify "Cleaning up old snapshots (keeping last ${BACKUP_MAX_KEEP})..."
-restic forget \
-    --keep-last "$BACKUP_MAX_KEEP" \
-    --host "$HOSTNAME" \
-    --prune >> "$BACKUP_LOG_FILE" 2>&1
+log_and_notify "Cleaning up old snapshots using retention policy..."
+
+# Build restic forget command with retention policies
+FORGET_CMD="restic forget --host \"$HOSTNAME\" --prune"
+
+[ -n "$RESTIC_KEEP_LAST" ] && [ "$RESTIC_KEEP_LAST" != "0" ] && FORGET_CMD="$FORGET_CMD --keep-last $RESTIC_KEEP_LAST"
+[ -n "$RESTIC_KEEP_DAILY" ] && [ "$RESTIC_KEEP_DAILY" != "0" ] && FORGET_CMD="$FORGET_CMD --keep-daily $RESTIC_KEEP_DAILY"
+[ -n "$RESTIC_KEEP_WEEKLY" ] && [ "$RESTIC_KEEP_WEEKLY" != "0" ] && FORGET_CMD="$FORGET_CMD --keep-weekly $RESTIC_KEEP_WEEKLY"
+[ -n "$RESTIC_KEEP_MONTHLY" ] && [ "$RESTIC_KEEP_MONTHLY" != "0" ] && FORGET_CMD="$FORGET_CMD --keep-monthly $RESTIC_KEEP_MONTHLY"
+[ -n "$RESTIC_KEEP_YEARLY" ] && [ "$RESTIC_KEEP_YEARLY" != "0" ] && FORGET_CMD="$FORGET_CMD --keep-yearly $RESTIC_KEEP_YEARLY"
+
+# Execute forget command
+eval "$FORGET_CMD" >> "$BACKUP_LOG_FILE" 2>&1
 
 if [ $? -eq 0 ]; then
     log_and_notify "Old snapshots cleaned up successfully"
@@ -1646,7 +1707,19 @@ run_backup() {
     echo ""
     echo -e "${GREEN}Backup destination:${NC}    ${CYAN}${BACKUP_REMOTE_DIR}${NC}"
     echo -e "${GREEN}Encryption:${NC}            ${CYAN}Enabled (AES-256-CBC)${NC}"
-    echo -e "${GREEN}Max backups to keep:${NC}   ${CYAN}${BACKUP_MAX_KEEP}${NC}"
+
+    # Show retention policy based on backup method
+    if [ "$BACKUP_METHOD" = "incremental" ]; then
+        echo -e "${GREEN}Retention Policy:${NC}"
+        [ -n "$RESTIC_KEEP_LAST" ] && [ "$RESTIC_KEEP_LAST" != "0" ] && echo -e "  Keep Last:         ${CYAN}${RESTIC_KEEP_LAST} backups${NC}"
+        [ -n "$RESTIC_KEEP_DAILY" ] && [ "$RESTIC_KEEP_DAILY" != "0" ] && echo -e "  Keep Daily:        ${CYAN}${RESTIC_KEEP_DAILY} days${NC}"
+        [ -n "$RESTIC_KEEP_WEEKLY" ] && [ "$RESTIC_KEEP_WEEKLY" != "0" ] && echo -e "  Keep Weekly:       ${CYAN}${RESTIC_KEEP_WEEKLY} weeks${NC}"
+        [ -n "$RESTIC_KEEP_MONTHLY" ] && [ "$RESTIC_KEEP_MONTHLY" != "0" ] && echo -e "  Keep Monthly:      ${CYAN}${RESTIC_KEEP_MONTHLY} months${NC}"
+        [ -n "$RESTIC_KEEP_YEARLY" ] && [ "$RESTIC_KEEP_YEARLY" != "0" ] && echo -e "  Keep Yearly:       ${CYAN}${RESTIC_KEEP_YEARLY} years${NC}"
+    else
+        echo -e "${GREEN}Max backups to keep:${NC}   ${CYAN}${BACKUP_MAX_KEEP}${NC}"
+    fi
+
     if [ -n "$TG_BOT_TOKEN" ] && [ -n "$TG_CHAT_ID" ]; then
         echo -e "${GREEN}Telegram notify:${NC}       ${CYAN}Enabled${NC}"
     fi
@@ -2050,18 +2123,57 @@ edit_configuration() {
                 ;;
 
             4)
-                # Edit max backups
+                # Edit backup retention
                 echo ""
-                echo -e "Current max backups: ${CYAN}$BACKUP_MAX_KEEP${NC}"
-                read -p "New max backups to keep: " new_max
-                if [[ $new_max =~ ^[0-9]+$ ]]; then
-                    BACKUP_MAX_KEEP="$new_max"
+                echo -e "${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+                echo -e "${CYAN}Edit Backup Retention Policy${NC}"
+                echo -e "${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+                echo ""
+
+                if [ "$BACKUP_METHOD" = "incremental" ]; then
+                    echo -e "${GREEN}Current Restic Retention Policy:${NC}"
+                    echo -e "  Keep Last:    ${CYAN}${RESTIC_KEEP_LAST:-7}${NC} backups"
+                    echo -e "  Keep Daily:   ${CYAN}${RESTIC_KEEP_DAILY:-30}${NC} days"
+                    echo -e "  Keep Weekly:  ${CYAN}${RESTIC_KEEP_WEEKLY:-8}${NC} weeks"
+                    echo -e "  Keep Monthly: ${CYAN}${RESTIC_KEEP_MONTHLY:-12}${NC} months"
+                    echo -e "  Keep Yearly:  ${CYAN}${RESTIC_KEEP_YEARLY:-3}${NC} years"
+                    echo ""
+                    echo -e "${YELLOW}Enter new values (or press Enter to keep current, enter 0 to disable):${NC}"
+                    echo ""
+
+                    read -p "Keep last N backups [${RESTIC_KEEP_LAST:-7}]: " new_last
+                    RESTIC_KEEP_LAST="${new_last:-${RESTIC_KEEP_LAST:-7}}"
+
+                    read -p "Keep daily for N days [${RESTIC_KEEP_DAILY:-30}]: " new_daily
+                    RESTIC_KEEP_DAILY="${new_daily:-${RESTIC_KEEP_DAILY:-30}}"
+
+                    read -p "Keep weekly for N weeks [${RESTIC_KEEP_WEEKLY:-8}]: " new_weekly
+                    RESTIC_KEEP_WEEKLY="${new_weekly:-${RESTIC_KEEP_WEEKLY:-8}}"
+
+                    read -p "Keep monthly for N months [${RESTIC_KEEP_MONTHLY:-12}]: " new_monthly
+                    RESTIC_KEEP_MONTHLY="${new_monthly:-${RESTIC_KEEP_MONTHLY:-12}}"
+
+                    read -p "Keep yearly for N years [${RESTIC_KEEP_YEARLY:-3}]: " new_yearly
+                    RESTIC_KEEP_YEARLY="${new_yearly:-${RESTIC_KEEP_YEARLY:-3}}"
+
                     save_config
                     create_backup_script
-                    log_success "Max backups updated to $new_max"
+                    echo ""
+                    log_success "Retention policy updated"
                 else
-                    log_error "Invalid number"
+                    echo -e "Current max backups: ${CYAN}$BACKUP_MAX_KEEP${NC}"
+                    read -p "New max backups to keep: " new_max
+                    if [[ $new_max =~ ^[0-9]+$ ]]; then
+                        BACKUP_MAX_KEEP="$new_max"
+                        save_config
+                        create_backup_script
+                        log_success "Max backups updated to $new_max"
+                    else
+                        log_error "Invalid number"
+                    fi
                 fi
+                echo ""
+                read -p "Press Enter to continue..."
                 ;;
 
             5)
