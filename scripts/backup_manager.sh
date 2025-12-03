@@ -1353,8 +1353,15 @@ REPO_STATS=$(restic stats --json 2>/dev/null)
 TOTAL_SIZE=$(echo "$REPO_STATS" | grep -o '"total_size":[0-9]*' | cut -d':' -f2)
 if [ -n "$TOTAL_SIZE" ]; then
     TOTAL_SIZE_MB=$((TOTAL_SIZE / 1024 / 1024))
+    # Format size with appropriate unit (GB for >= 1024 MB, otherwise MB)
+    if [ $TOTAL_SIZE_MB -ge 1024 ]; then
+        TOTAL_SIZE_GB=$(awk "BEGIN {printf \"%.2f\", $TOTAL_SIZE_MB / 1024}")
+        REPO_SIZE_DISPLAY="${TOTAL_SIZE_GB} GB"
+    else
+        REPO_SIZE_DISPLAY="${TOTAL_SIZE_MB} MB"
+    fi
 else
-    TOTAL_SIZE_MB="N/A"
+    REPO_SIZE_DISPLAY="N/A"
 fi
 
 # Get snapshot count
@@ -1454,7 +1461,7 @@ ${CHECK_STATUS} ${CHECK_TYPE}
 
 <b>📚 Repository:</b>
 📸 Total snapshots: ${SNAPSHOT_COUNT}
-💿 Repository size: ${TOTAL_SIZE_MB}MB
+💿 Repository size: ${REPO_SIZE_DISPLAY}
 
 <b>🔒 Retention Policy:</b>
 Last: ${RESTIC_KEEP_LAST}, Daily: ${RESTIC_KEEP_DAILY}, Weekly: ${RESTIC_KEEP_WEEKLY}
