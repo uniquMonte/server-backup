@@ -419,9 +419,9 @@ configure_backup_sources() {
 
     echo ""
     echo -e "${GREEN}Select backup source configuration:${NC}"
-    echo -e "  ${GREEN}1.${NC} Use recommended directories (${CYAN}快速推荐${NC})"
+    echo -e "  ${GREEN}1.${NC} Use recommended directories (Quick setup)"
     echo -e "     ${YELLOW}Includes: /root, /etc, /home, /opt, /var/www, /var/spool, /usr/local${NC}"
-    echo -e "  ${CYAN}2.${NC} Add directories manually (自定义)"
+    echo -e "  ${CYAN}2.${NC} Add directories manually (Custom)"
     echo ""
     read -p "Select option [1-2] (press Enter for recommended): " src_choice
     src_choice="${src_choice:-1}"
@@ -2253,7 +2253,7 @@ edit_configuration() {
 
                 echo ""
                 echo -e "${YELLOW}Options:${NC}"
-                echo -e "  ${GREEN}1.${NC} Use recommended directories (${CYAN}快速推荐${NC})"
+                echo -e "  ${GREEN}1.${NC} Use recommended directories (Quick setup)"
                 echo -e "  ${CYAN}a.${NC} Add new source"
                 echo -e "  ${CYAN}r.${NC} Remove source"
                 echo -e "  ${CYAN}c.${NC} Clear all and reconfigure"
