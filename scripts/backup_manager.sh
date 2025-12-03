@@ -79,6 +79,12 @@ load_config() {
     RESTIC_KEEP_WEEKLY="${RESTIC_KEEP_WEEKLY:-8}"
     RESTIC_KEEP_MONTHLY="${RESTIC_KEEP_MONTHLY:-12}"
     RESTIC_KEEP_YEARLY="${RESTIC_KEEP_YEARLY:-3}"
+
+    # Apply default values for integrity checks if not set
+    RESTIC_CHECK_ENABLED="${RESTIC_CHECK_ENABLED:-true}"
+    RESTIC_CHECK_DAILY="${RESTIC_CHECK_DAILY:-quick}"
+    RESTIC_CHECK_WEEKLY="${RESTIC_CHECK_WEEKLY:-partial}"
+    RESTIC_CHECK_MONTHLY="${RESTIC_CHECK_MONTHLY:-full}"
 }
 
 # Generate backup path suffix based on backup method
@@ -1146,6 +1152,12 @@ RESTIC_KEEP_DAILY="${RESTIC_KEEP_DAILY:-30}"
 RESTIC_KEEP_WEEKLY="${RESTIC_KEEP_WEEKLY:-8}"
 RESTIC_KEEP_MONTHLY="${RESTIC_KEEP_MONTHLY:-12}"
 RESTIC_KEEP_YEARLY="${RESTIC_KEEP_YEARLY:-3}"
+
+# Data integrity verification (for incremental backups)
+RESTIC_CHECK_ENABLED="${RESTIC_CHECK_ENABLED:-true}"
+RESTIC_CHECK_DAILY="${RESTIC_CHECK_DAILY:-quick}"        # quick check
+RESTIC_CHECK_WEEKLY="${RESTIC_CHECK_WEEKLY:-partial}"    # read 20% of data
+RESTIC_CHECK_MONTHLY="${RESTIC_CHECK_MONTHLY:-full}"     # read all data
 EOF
 
     chmod 600 "$BACKUP_ENV"
@@ -1347,7 +1359,74 @@ fi
 # Get snapshot count
 SNAPSHOT_COUNT=$(restic snapshots --json 2>/dev/null | grep -o '"hostname"' | wc -l)
 
-# Format duration
+# Data integrity verification
+CHECK_STATUS="⚠️ Skipped"
+CHECK_TYPE="None"
+CHECK_DURATION="N/A"
+
+if [ "${RESTIC_CHECK_ENABLED}" = "true" ]; then
+    log_and_notify "Starting data integrity verification..."
+
+    # Determine check type based on day of month and week
+    DAY_OF_MONTH=$(date +%d)
+    DAY_OF_WEEK=$(date +%u)  # 1=Monday, 7=Sunday
+
+    # Monthly full check on 1st of month
+    if [ "$DAY_OF_MONTH" = "01" ] && [ "${RESTIC_CHECK_MONTHLY}" = "full" ]; then
+        CHECK_TYPE="Full (monthly)"
+        log_and_notify "Performing full data verification (monthly)..."
+        CHECK_START=$(date +%s)
+        CHECK_OUTPUT=$(restic check --read-data 2>&1)
+        CHECK_RC=$?
+        CHECK_END=$(date +%s)
+        CHECK_DURATION=$((CHECK_END - CHECK_START))
+    # Weekly partial check on Sundays (or every 7 days)
+    elif [ "$DAY_OF_WEEK" = "7" ] && [ "${RESTIC_CHECK_WEEKLY}" = "partial" ]; then
+        CHECK_TYPE="Partial (weekly)"
+        log_and_notify "Performing partial data verification (weekly - 20% sample)..."
+        CHECK_START=$(date +%s)
+        CHECK_OUTPUT=$(restic check --read-data-subset=20% 2>&1)
+        CHECK_RC=$?
+        CHECK_END=$(date +%s)
+        CHECK_DURATION=$((CHECK_END - CHECK_START))
+    # Daily quick check
+    elif [ "${RESTIC_CHECK_DAILY}" = "quick" ]; then
+        CHECK_TYPE="Quick (daily)"
+        log_and_notify "Performing quick integrity check (daily)..."
+        CHECK_START=$(date +%s)
+        CHECK_OUTPUT=$(restic check 2>&1)
+        CHECK_RC=$?
+        CHECK_END=$(date +%s)
+        CHECK_DURATION=$((CHECK_END - CHECK_START))
+    else
+        CHECK_TYPE="None"
+        CHECK_RC=0
+    fi
+
+    # Log check output
+    if [ "$CHECK_TYPE" != "None" ]; then
+        echo "$CHECK_OUTPUT" >> "$BACKUP_LOG_FILE"
+
+        if [ $CHECK_RC -eq 0 ]; then
+            CHECK_STATUS="✅ Passed"
+            log_and_notify "Data integrity check passed (${CHECK_TYPE})"
+        else
+            CHECK_STATUS="❌ Failed"
+            log_and_notify "Data integrity check FAILED (${CHECK_TYPE})" true
+        fi
+
+        # Format check duration
+        CHECK_DURATION_MIN=$((CHECK_DURATION / 60))
+        CHECK_DURATION_SEC=$((CHECK_DURATION % 60))
+        if [ $CHECK_DURATION_MIN -gt 0 ]; then
+            CHECK_DURATION="${CHECK_DURATION_MIN}m ${CHECK_DURATION_SEC}s"
+        else
+            CHECK_DURATION="${CHECK_DURATION_SEC}s"
+        fi
+    fi
+fi
+
+# Format backup duration
 if [ $BACKUP_DURATION_MIN -gt 0 ]; then
     DURATION_TEXT="${BACKUP_DURATION_MIN}m ${BACKUP_DURATION_SEC}s"
 else
@@ -1367,6 +1446,10 @@ send_telegram_message "🖥️ <b>$HOSTNAME Backup Completed</b>
 🆕 New: ${FILES_NEW:-0}
 📝 Changed: ${FILES_CHANGED:-0}
 ✓ Unchanged: ${FILES_UNCHANGED:-0}
+
+<b>🔍 Data Integrity Check:</b>
+${CHECK_STATUS} ${CHECK_TYPE}
+⏱ Check time: ${CHECK_DURATION}
 
 <b>📚 Repository:</b>
 📸 Total snapshots: ${SNAPSHOT_COUNT}
