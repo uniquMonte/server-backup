@@ -72,6 +72,13 @@ load_config() {
     if [ -f "$BACKUP_ENV" ]; then
         source "$BACKUP_ENV"
     fi
+
+    # Apply default values for retention policy if not set
+    RESTIC_KEEP_LAST="${RESTIC_KEEP_LAST:-7}"
+    RESTIC_KEEP_DAILY="${RESTIC_KEEP_DAILY:-30}"
+    RESTIC_KEEP_WEEKLY="${RESTIC_KEEP_WEEKLY:-8}"
+    RESTIC_KEEP_MONTHLY="${RESTIC_KEEP_MONTHLY:-12}"
+    RESTIC_KEEP_YEARLY="${RESTIC_KEEP_YEARLY:-3}"
 }
 
 # Check dependencies
