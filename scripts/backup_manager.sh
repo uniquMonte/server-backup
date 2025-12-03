@@ -2035,7 +2035,7 @@ list_backups() {
         echo -e "${GREEN}Available snapshots:${NC}"
         echo ""
 
-        # Parse and display snapshots
+        # Parse and display snapshots (sorted by date, newest first)
         echo "$snapshots" | python3 -c "
 import sys, json
 try:
@@ -2044,7 +2044,10 @@ try:
         print('No snapshots found')
         sys.exit(0)
 
-    for snap in data:
+    # Sort by time in descending order (newest first)
+    sorted_data = sorted(data, key=lambda x: x.get('time', ''), reverse=True)
+
+    for snap in sorted_data:
         snap_id = snap.get('short_id', snap.get('id', '')[:8])
         snap_time = snap.get('time', '')
         snap_host = snap.get('hostname', '')

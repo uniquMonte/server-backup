@@ -81,7 +81,7 @@ list_restic_snapshots() {
     echo -e "${GREEN}Available snapshots:${NC}"
     echo ""
 
-    # Parse and display snapshots with numbering
+    # Parse and display snapshots with numbering (sorted by date, newest first)
     echo "$snapshots" | python3 -c "
 import sys, json
 try:
@@ -90,7 +90,10 @@ try:
         print('No snapshots found')
         sys.exit(0)
 
-    for idx, snap in enumerate(data, 1):
+    # Sort by time in descending order (newest first)
+    sorted_data = sorted(data, key=lambda x: x.get('time', ''), reverse=True)
+
+    for idx, snap in enumerate(sorted_data, 1):
         snap_id = snap.get('short_id', snap.get('id', '')[:8])
         snap_time = snap.get('time', '')
         snap_host = snap.get('hostname', '')
@@ -174,14 +177,28 @@ restore_restic_snapshot() {
 
     local snapshot_count=$(echo "$snapshots" | python3 -c "import sys,json; data=json.load(sys.stdin); print(len(data))")
 
+    # Create temporary file to store sorted snapshot IDs
+    local temp_ids=$(mktemp)
+
+    # Display snapshots sorted by date (newest first) and store sorted IDs
     echo "$snapshots" | python3 -c "
 import sys, json
 data = json.load(sys.stdin)
-for idx, snap in enumerate(data, 1):
+# Sort by time in descending order (newest first)
+sorted_data = sorted(data, key=lambda x: x.get('time', ''), reverse=True)
+
+# Display snapshots
+for idx, snap in enumerate(sorted_data, 1):
     snap_id = snap.get('short_id', snap.get('id', '')[:8])
     snap_time = snap.get('time', '')
     snap_host = snap.get('hostname', '')
     print(f'  {idx}. \033[36m{snap_id}\033[0m  \033[33m{snap_time}\033[0m  Host: \033[32m{snap_host}\033[0m')
+
+# Save sorted snapshot IDs to file
+with open('$temp_ids', 'w') as f:
+    for snap in sorted_data:
+        snap_id = snap.get('short_id', snap.get('id', '')[:8])
+        f.write(snap_id + '\n')
 "
 
     echo ""
@@ -190,20 +207,21 @@ for idx, snap in enumerate(data, 1):
     # Get snapshot ID
     local snapshot_id=""
     if [[ "$selection" == "latest" ]] || [[ "$selection" == "l" ]] || [[ -z "$selection" ]]; then
-        snapshot_id="latest"
-        log_info "Using latest snapshot"
+        # Get the first (newest) snapshot ID from sorted list
+        snapshot_id=$(head -1 "$temp_ids")
+        log_info "Using latest snapshot: $snapshot_id"
     elif [[ $selection =~ ^[0-9]+$ ]] && [ $selection -ge 1 ] && [ $selection -le $snapshot_count ]; then
-        snapshot_id=$(echo "$snapshots" | python3 -c "
-import sys, json
-data = json.load(sys.stdin)
-idx = int('$selection') - 1
-print(data[idx].get('short_id', data[idx].get('id', '')[:8]))
-")
+        # Get the selected snapshot ID from sorted list
+        snapshot_id=$(sed -n "${selection}p" "$temp_ids")
         log_info "Selected snapshot: $snapshot_id"
     else
+        rm -f "$temp_ids"
         log_error "Invalid selection"
         return 1
     fi
+
+    # Clean up temp file
+    rm -f "$temp_ids"
 
     # Ask for restore location
     echo ""
