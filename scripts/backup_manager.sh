@@ -81,6 +81,24 @@ load_config() {
     RESTIC_KEEP_YEARLY="${RESTIC_KEEP_YEARLY:-3}"
 }
 
+# Generate backup path suffix based on backup method
+get_backup_path_suffix() {
+    local method="${1:-${BACKUP_METHOD:-incremental}}"
+    if [ "$method" = "incremental" ]; then
+        echo "incremental"
+    else
+        echo "full"
+    fi
+}
+
+# Generate default backup path
+generate_backup_path() {
+    local hostname="${1:-${BACKUP_HOSTNAME}}"
+    local method="${2:-${BACKUP_METHOD:-incremental}}"
+    local suffix=$(get_backup_path_suffix "$method")
+    echo "vps-${hostname}-${suffix}"
+}
+
 # Check dependencies
 check_dependency() {
     local tool="$1"
@@ -587,7 +605,8 @@ configure_backup() {
         echo -e "${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
         echo ""
         echo -e "Each VPS should have a unique identifier to avoid backup conflicts."
-        echo -e "This will be used in the backup path: ${CYAN}vps-{identifier}-backup${NC}"
+        local method_suffix=$(get_backup_path_suffix "$BACKUP_METHOD")
+        echo -e "This will be used in the backup path: ${CYAN}vps-{identifier}-${method_suffix}${NC}"
         echo ""
 
         if [ -n "$BACKUP_HOSTNAME" ]; then
@@ -662,7 +681,7 @@ configure_backup() {
                 local selected_remote=$(echo "$existing_remotes" | sed -n "${remote_choice}p" | tr -d ':')
                 log_success "Selected remote: ${selected_remote}"
                 echo ""
-                local default_path="vps-${BACKUP_HOSTNAME}-backup"
+                local default_path=$(generate_backup_path "$BACKUP_HOSTNAME" "$BACKUP_METHOD")
                 echo -e "${CYAN}Suggested path: ${default_path}${NC}"
                 read -p "Remote directory path [${default_path}] (press Enter for default): " remote_path
                 remote_path="${remote_path:-$default_path}"
@@ -670,36 +689,39 @@ configure_backup() {
                 log_success "Full path: $BACKUP_REMOTE_DIR"
             else
                 # Manual input - user chose 0 or pressed Enter (for multiple) or chose 2 (for single)
-                local default_full_path="gdrive:vps-${BACKUP_HOSTNAME}-backup"
+                local default_path=$(generate_backup_path "$BACKUP_HOSTNAME" "$BACKUP_METHOD")
+                local default_full_path="gdrive:${default_path}"
                 if [ -n "$BACKUP_REMOTE_DIR" ]; then
                     echo -e "Current config: ${CYAN}$BACKUP_REMOTE_DIR${NC}"
                     default_full_path="$BACKUP_REMOTE_DIR"
                 fi
-                log_info "Format: remote_name:path (e.g. gdrive:vps-${BACKUP_HOSTNAME}-backup)"
+                log_info "Format: remote_name:path (e.g. gdrive:${default_path})"
                 read -p "Remote directory [${default_full_path}] (press Enter for default): " remote_dir
                 BACKUP_REMOTE_DIR="${remote_dir:-${default_full_path}}"
             fi
         else
             # No existing remotes
             log_info "No existing rclone remotes found"
-            local default_full_path="gdrive:vps-${BACKUP_HOSTNAME}-backup"
+            local default_path=$(generate_backup_path "$BACKUP_HOSTNAME" "$BACKUP_METHOD")
+            local default_full_path="gdrive:${default_path}"
             if [ -n "$BACKUP_REMOTE_DIR" ]; then
                 echo -e "Current config: ${CYAN}$BACKUP_REMOTE_DIR${NC}"
                 default_full_path="$BACKUP_REMOTE_DIR"
             fi
-            log_info "Format: remote_name:path (e.g. gdrive:vps-${BACKUP_HOSTNAME}-backup)"
+            log_info "Format: remote_name:path (e.g. gdrive:${default_path})"
             read -p "Remote directory [${default_full_path}] (press Enter for default): " remote_dir
             BACKUP_REMOTE_DIR="${remote_dir:-${default_full_path}}"
         fi
     else
         # rclone not installed
         log_warning "rclone is not installed"
-        local default_full_path="gdrive:vps-${BACKUP_HOSTNAME}-backup"
+        local default_path=$(generate_backup_path "$BACKUP_HOSTNAME" "$BACKUP_METHOD")
+        local default_full_path="gdrive:${default_path}"
         if [ -n "$BACKUP_REMOTE_DIR" ]; then
             echo -e "Current config: ${CYAN}$BACKUP_REMOTE_DIR${NC}"
             default_full_path="$BACKUP_REMOTE_DIR"
         fi
-        log_info "Format: remote_name:path (e.g. gdrive:vps-${BACKUP_HOSTNAME}-backup)"
+        log_info "Format: remote_name:path (e.g. gdrive:${default_path})"
         read -p "Remote directory [${default_full_path}] (press Enter for default): " remote_dir
         BACKUP_REMOTE_DIR="${remote_dir:-${default_full_path}}"
     fi
@@ -752,7 +774,7 @@ configure_backup() {
                             read -p "Enter new VPS identifier: " new_id
                             if [ -n "$new_id" ]; then
                                 BACKUP_HOSTNAME=$(echo "$new_id" | tr '[:upper:]' '[:lower:]' | sed 's/[^a-z0-9-]/-/g' | sed 's/--*/-/g' | sed 's/^-//;s/-$//')
-                                local new_path="vps-${BACKUP_HOSTNAME}-backup"
+                                local new_path=$(generate_backup_path "$BACKUP_HOSTNAME" "$BACKUP_METHOD")
                                 BACKUP_REMOTE_DIR="${remote_name_check}:${new_path}"
                                 log_success "New path: ${BACKUP_REMOTE_DIR}"
                                 # Re-check if new path exists (recursive check would go here, but keep it simple)
@@ -768,7 +790,8 @@ configure_backup() {
                             ;;
                         3)
                             echo ""
-                            read -p "Enter full remote path (e.g., gdrive:vps-myserver-backup): " manual_path
+                            local example_path=$(generate_backup_path "myserver" "$BACKUP_METHOD")
+                            read -p "Enter full remote path (e.g., gdrive:${example_path}): " manual_path
 
                             if [ -n "$manual_path" ]; then
                                 BACKUP_REMOTE_DIR="$manual_path"
@@ -2249,7 +2272,8 @@ edit_configuration() {
                     echo -e "${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
 
                     local old_remote=$(echo "$BACKUP_REMOTE_DIR" | cut -d':' -f1)
-                    local new_suggested_path="${old_remote}:vps-${new_hostname}-backup"
+                    local new_path_suffix=$(generate_backup_path "$new_hostname" "$BACKUP_METHOD")
+                    local new_suggested_path="${old_remote}:${new_path_suffix}"
 
                     echo -e "Old path:  ${CYAN}$BACKUP_REMOTE_DIR${NC}"
                     echo -e "New path:  ${GREEN}${new_suggested_path}${NC}"
