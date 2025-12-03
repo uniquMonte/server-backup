@@ -1250,6 +1250,9 @@ fi
 # Perform backup
 log_and_notify "Creating backup snapshot..."
 
+# Record start time
+BACKUP_START_TIME=$(date +%s)
+
 # Build backup arguments
 BACKUP_ARGS=()
 for SRC in "${BACKUP_SRCS_ARRAY[@]}"; do
@@ -1266,6 +1269,12 @@ BACKUP_OUTPUT=$(restic backup "${BACKUP_ARGS[@]}" \
     --host "$HOSTNAME" 2>&1)
 BACKUP_RC=$?
 
+# Record end time and calculate duration
+BACKUP_END_TIME=$(date +%s)
+BACKUP_DURATION=$((BACKUP_END_TIME - BACKUP_START_TIME))
+BACKUP_DURATION_MIN=$((BACKUP_DURATION / 60))
+BACKUP_DURATION_SEC=$((BACKUP_DURATION % 60))
+
 echo "$BACKUP_OUTPUT" >> "$BACKUP_LOG_FILE"
 
 if [ $BACKUP_RC -ne 0 ]; then
@@ -1273,11 +1282,12 @@ if [ $BACKUP_RC -ne 0 ]; then
     exit 1
 fi
 
-# Extract stats from output
-FILES_NEW=$(echo "$BACKUP_OUTPUT" | grep "Files:" | awk '{print $3}' | head -1)
-FILES_CHANGED=$(echo "$BACKUP_OUTPUT" | grep "Files:" | awk '{print $5}' | head -1)
-FILES_UNCHANGED=$(echo "$BACKUP_OUTPUT" | grep "Files:" | awk '{print $7}' | head -1)
+# Extract stats from output with improved parsing
+FILES_NEW=$(echo "$BACKUP_OUTPUT" | grep "Files:" | sed -E 's/Files:[[:space:]]+([0-9]+) new.*/\1/')
+FILES_CHANGED=$(echo "$BACKUP_OUTPUT" | grep "Files:" | sed -E 's/.*,[[:space:]]+([0-9]+) changed.*/\1/')
+FILES_UNCHANGED=$(echo "$BACKUP_OUTPUT" | grep "Files:" | sed -E 's/.*,[[:space:]]+([0-9]+) unmodified.*/\1/')
 DATA_ADDED=$(echo "$BACKUP_OUTPUT" | grep "Added to the repository:" | awk '{print $5, $6}')
+PROCESSED_SIZE=$(echo "$BACKUP_OUTPUT" | grep "processed" | awk '{print $(NF-2), $(NF-1)}')
 
 log_and_notify "Backup snapshot created successfully"
 
@@ -1314,13 +1324,34 @@ fi
 # Get snapshot count
 SNAPSHOT_COUNT=$(restic snapshots --json 2>/dev/null | grep -o '"hostname"' | wc -l)
 
-# Success notification
+# Format duration
+if [ $BACKUP_DURATION_MIN -gt 0 ]; then
+    DURATION_TEXT="${BACKUP_DURATION_MIN}m ${BACKUP_DURATION_SEC}s"
+else
+    DURATION_TEXT="${BACKUP_DURATION_SEC}s"
+fi
+
+# Success notification with enhanced information
 send_telegram_message "🖥️ <b>$HOSTNAME Backup Completed</b>
 ✅ Incremental backup successful
+
+<b>📊 Backup Statistics:</b>
+⏱ Duration: ${DURATION_TEXT}
 📦 Data added: ${DATA_ADDED:-N/A}
-📊 Files: new=${FILES_NEW:-0}, changed=${FILES_CHANGED:-0}, unchanged=${FILES_UNCHANGED:-0}
-📚 Total snapshots: ${SNAPSHOT_COUNT}
-💾 Repository size: ${TOTAL_SIZE_MB}MB"
+💾 Processed: ${PROCESSED_SIZE:-N/A}
+
+<b>📁 Files Summary:</b>
+🆕 New: ${FILES_NEW:-0}
+📝 Changed: ${FILES_CHANGED:-0}
+✓ Unchanged: ${FILES_UNCHANGED:-0}
+
+<b>📚 Repository:</b>
+📸 Total snapshots: ${SNAPSHOT_COUNT}
+💿 Repository size: ${TOTAL_SIZE_MB}MB
+
+<b>🔒 Retention Policy:</b>
+Last: ${RESTIC_KEEP_LAST}, Daily: ${RESTIC_KEEP_DAILY}, Weekly: ${RESTIC_KEEP_WEEKLY}
+Monthly: ${RESTIC_KEEP_MONTHLY}, Yearly: ${RESTIC_KEEP_YEARLY}"
 
 log_and_notify "Backup process completed! Method: restic (incremental)"
 
