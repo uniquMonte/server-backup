@@ -1162,7 +1162,14 @@ HOSTNAME=$(hostname)
 LOCK_FILE="/var/lock/vps-backup.lock"
 
 # Set restic environment
-export RESTIC_REPOSITORY="${BACKUP_REMOTE_DIR}"
+# For rclone remotes, restic needs the format: rclone:remote:path
+if [[ "$BACKUP_REMOTE_DIR" == *:* ]] && [[ "$BACKUP_REMOTE_DIR" != /* ]]; then
+    # This is an rclone remote (contains : and doesn't start with /)
+    export RESTIC_REPOSITORY="rclone:${BACKUP_REMOTE_DIR}"
+else
+    # Local path or other format
+    export RESTIC_REPOSITORY="${BACKUP_REMOTE_DIR}"
+fi
 export RESTIC_PASSWORD="${BACKUP_PASSWORD}"
 
 # Cleanup function
