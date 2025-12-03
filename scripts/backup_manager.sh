@@ -113,7 +113,7 @@ generate_backup_path() {
     local hostname="${1:-${BACKUP_HOSTNAME}}"
     local method="${2:-${BACKUP_METHOD:-incremental}}"
     local suffix=$(get_backup_path_suffix "$method")
-    echo "vps-${hostname}-${suffix}"
+    echo "backup/vps-${hostname}-${suffix}"
 }
 
 # Check dependencies
@@ -766,47 +766,63 @@ configure_backup() {
                 log_success "Selected remote: ${selected_remote}"
                 echo ""
                 local default_path=$(generate_backup_path "$BACKUP_HOSTNAME" "$BACKUP_METHOD")
-                echo -e "${CYAN}Suggested path: ${default_path}${NC}"
-                read -p "Remote directory path [${default_path}] (press Enter for default): " remote_path
+                echo -e "${GREEN}Recommended path (automatically generated):${NC}"
+                echo -e "  ${CYAN}${default_path}${NC}"
+                echo -e "  ${YELLOW}• Based on hostname: ${BACKUP_HOSTNAME}${NC}"
+                echo -e "  ${YELLOW}• Backup method: ${BACKUP_METHOD}${NC}"
+                echo ""
+                read -p "Remote directory path [${default_path}] (press Enter to use recommended): " remote_path
                 remote_path="${remote_path:-$default_path}"
                 BACKUP_REMOTE_DIR="${selected_remote}:${remote_path}"
                 log_success "Full path: $BACKUP_REMOTE_DIR"
             else
                 # Manual input - user chose 0 or pressed Enter (for multiple) or chose 2 (for single)
+                echo ""
                 local default_path=$(generate_backup_path "$BACKUP_HOSTNAME" "$BACKUP_METHOD")
                 local default_full_path="gdrive:${default_path}"
                 if [ -n "$BACKUP_REMOTE_DIR" ]; then
                     echo -e "Current config: ${CYAN}$BACKUP_REMOTE_DIR${NC}"
                     default_full_path="$BACKUP_REMOTE_DIR"
                 fi
-                log_info "Format: remote_name:path (e.g. gdrive:${default_path})"
-                read -p "Remote directory [${default_full_path}] (press Enter for default): " remote_dir
+                echo -e "${GREEN}Recommended path format:${NC}"
+                echo -e "  ${CYAN}remote_name:${default_path}${NC}"
+                echo -e "  ${YELLOW}Example: gdrive:${default_path}${NC}"
+                echo ""
+                read -p "Remote directory [${default_full_path}] (press Enter to use default): " remote_dir
                 BACKUP_REMOTE_DIR="${remote_dir:-${default_full_path}}"
             fi
         else
             # No existing remotes
             log_info "No existing rclone remotes found"
+            echo ""
             local default_path=$(generate_backup_path "$BACKUP_HOSTNAME" "$BACKUP_METHOD")
             local default_full_path="gdrive:${default_path}"
             if [ -n "$BACKUP_REMOTE_DIR" ]; then
                 echo -e "Current config: ${CYAN}$BACKUP_REMOTE_DIR${NC}"
                 default_full_path="$BACKUP_REMOTE_DIR"
             fi
-            log_info "Format: remote_name:path (e.g. gdrive:${default_path})"
-            read -p "Remote directory [${default_full_path}] (press Enter for default): " remote_dir
+            echo -e "${GREEN}Recommended path format:${NC}"
+            echo -e "  ${CYAN}remote_name:${default_path}${NC}"
+            echo -e "  ${YELLOW}Example: gdrive:${default_path}${NC}"
+            echo ""
+            read -p "Remote directory [${default_full_path}] (press Enter to use default): " remote_dir
             BACKUP_REMOTE_DIR="${remote_dir:-${default_full_path}}"
         fi
     else
         # rclone not installed
         log_warning "rclone is not installed"
+        echo ""
         local default_path=$(generate_backup_path "$BACKUP_HOSTNAME" "$BACKUP_METHOD")
         local default_full_path="gdrive:${default_path}"
         if [ -n "$BACKUP_REMOTE_DIR" ]; then
             echo -e "Current config: ${CYAN}$BACKUP_REMOTE_DIR${NC}"
             default_full_path="$BACKUP_REMOTE_DIR"
         fi
-        log_info "Format: remote_name:path (e.g. gdrive:${default_path})"
-        read -p "Remote directory [${default_full_path}] (press Enter for default): " remote_dir
+        echo -e "${GREEN}Recommended path format:${NC}"
+        echo -e "  ${CYAN}remote_name:${default_path}${NC}"
+        echo -e "  ${YELLOW}Example: gdrive:${default_path}${NC}"
+        echo ""
+        read -p "Remote directory [${default_full_path}] (press Enter to use default): " remote_dir
         BACKUP_REMOTE_DIR="${remote_dir:-${default_full_path}}"
     fi
 
