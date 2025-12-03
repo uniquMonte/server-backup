@@ -2003,29 +2003,116 @@ list_backups() {
     log_info "Listing backups in $BACKUP_REMOTE_DIR..."
     echo ""
 
-    if ! command -v rclone &> /dev/null; then
-        log_error "rclone is not installed"
-        return 1
+    # Detect backup method
+    local method="${BACKUP_METHOD:-incremental}"
+
+    if [ "$method" = "incremental" ]; then
+        # List restic snapshots
+        if ! command -v restic &> /dev/null; then
+            log_error "restic is not installed"
+            return 1
+        fi
+
+        # Set up restic environment
+        export RESTIC_REPOSITORY="rclone:${BACKUP_REMOTE_DIR}"
+        export RESTIC_PASSWORD="${BACKUP_PASSWORD}"
+        export RCLONE_CONFIG="${RCLONE_CONFIG:-$HOME/.config/rclone/rclone.conf}"
+
+        # Check if repository exists
+        if ! restic snapshots &> /dev/null; then
+            log_warning "No restic repository found or cannot access repository"
+            return 0
+        fi
+
+        # List snapshots
+        local snapshots=$(restic snapshots --json 2>/dev/null)
+
+        if [ -z "$snapshots" ] || [ "$snapshots" = "null" ] || [ "$snapshots" = "[]" ]; then
+            log_warning "No snapshots found"
+            return 0
+        fi
+
+        echo -e "${GREEN}Available snapshots:${NC}"
+        echo ""
+
+        # Parse and display snapshots
+        echo "$snapshots" | python3 -c "
+import sys, json
+try:
+    data = json.load(sys.stdin)
+    if not data:
+        print('No snapshots found')
+        sys.exit(0)
+
+    for snap in data:
+        snap_id = snap.get('short_id', snap.get('id', '')[:8])
+        snap_time = snap.get('time', '')
+        snap_host = snap.get('hostname', '')
+        snap_paths = snap.get('paths', [])
+
+        print(f'  \033[36m{snap_id}\033[0m  \033[33m{snap_time}\033[0m')
+        print(f'    Host: \033[32m{snap_host}\033[0m')
+        if snap_paths:
+            print(f'    Paths: {len(snap_paths)} location(s)')
+        print()
+except Exception as e:
+    print(f'Error parsing snapshots: {e}', file=sys.stderr)
+" 2>/dev/null || {
+            # Fallback to simple text output if python fails
+            restic snapshots --compact 2>/dev/null
+        }
+
+        # Get repository stats
+        echo -e "${CYAN}Repository Statistics:${NC}"
+        restic stats --json 2>/dev/null | python3 -c "
+import sys, json
+try:
+    data = json.load(sys.stdin)
+    total_size = data.get('total_size', 0)
+    total_file_count = data.get('total_file_count', 0)
+
+    # Convert to human readable
+    if total_size < 1024:
+        size_str = f'{total_size} B'
+    elif total_size < 1024*1024:
+        size_str = f'{total_size/1024:.2f} KB'
+    elif total_size < 1024*1024*1024:
+        size_str = f'{total_size/(1024*1024):.2f} MB'
+    else:
+        size_str = f'{total_size/(1024*1024*1024):.2f} GB'
+
+    print(f'  Total size: \033[33m{size_str}\033[0m')
+    print(f'  Total files: \033[33m{total_file_count:,}\033[0m')
+except Exception as e:
+    print(f'Error: {e}', file=sys.stderr)
+" 2>/dev/null || echo "  Stats unavailable"
+
+    else
+        # List full backup files (old method)
+        if ! command -v rclone &> /dev/null; then
+            log_error "rclone is not installed"
+            return 1
+        fi
+
+        local backups=$(rclone lsl "${BACKUP_REMOTE_DIR}" 2>/dev/null | grep "backup-")
+
+        if [ -z "$backups" ]; then
+            log_warning "No backups found"
+            return 0
+        fi
+
+        echo -e "${GREEN}Available backups:${NC}"
+        echo "$backups" | while read -r size date time file; do
+            # Convert size to human readable
+            local size_mb=$((size / 1024 / 1024))
+            echo -e "  ${CYAN}$file${NC}"
+            echo -e "    Size: ${YELLOW}${size_mb}MB${NC}  Date: ${YELLOW}$date $time${NC}"
+        done
+
+        echo ""
+        local total_size=$(rclone size "${BACKUP_REMOTE_DIR}" 2>/dev/null | grep "Total size:" | awk '{print $3, $4}')
+        echo -e "Total size: ${CYAN}${total_size}${NC}"
     fi
-
-    local backups=$(rclone lsl "${BACKUP_REMOTE_DIR}" 2>/dev/null | grep "backup-")
-
-    if [ -z "$backups" ]; then
-        log_warning "No backups found"
-        return 0
-    fi
-
-    echo -e "${GREEN}Available backups:${NC}"
-    echo "$backups" | while read -r size date time file; do
-        # Convert size to human readable
-        local size_mb=$((size / 1024 / 1024))
-        echo -e "  ${CYAN}$file${NC}"
-        echo -e "    Size: ${YELLOW}${size_mb}MB${NC}  Date: ${YELLOW}$date $time${NC}"
-    done
-
-    echo ""
-    local total_size=$(rclone size "${BACKUP_REMOTE_DIR}" 2>/dev/null | grep "Total size:" | awk '{print $3, $4}')
-    echo -e "Total size: ${CYAN}${total_size}${NC}"
 }
 
 # View logs

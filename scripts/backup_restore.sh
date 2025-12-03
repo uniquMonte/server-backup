@@ -2,7 +2,7 @@
 
 #######################################
 # VPS Backup Restore Tool
-# Decrypt and restore backups
+# Supports both incremental (restic) and full (tar+openssl) backups
 #######################################
 
 # Color definitions
@@ -41,13 +41,89 @@ load_config() {
         exit 1
     fi
     source "$BACKUP_ENV"
+
+    # Set default backup method if not specified
+    BACKUP_METHOD="${BACKUP_METHOD:-incremental}"
 }
 
-# List available backups
-list_backups() {
+# List available backups (restic snapshots)
+list_restic_snapshots() {
     echo ""
     echo -e "${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
-    echo -e "${CYAN}Available Backups${NC}"
+    echo -e "${CYAN}Available Backups (Restic Snapshots)${NC}"
+    echo -e "${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+
+    if ! command -v restic &> /dev/null; then
+        log_error "restic is not installed"
+        return 1
+    fi
+
+    # Set up restic environment
+    export RESTIC_REPOSITORY="rclone:${BACKUP_REMOTE_DIR}"
+    export RESTIC_PASSWORD="${BACKUP_PASSWORD}"
+    export RCLONE_CONFIG="${RCLONE_CONFIG:-$HOME/.config/rclone/rclone.conf}"
+
+    # Check if repository exists
+    if ! restic snapshots &> /dev/null; then
+        log_warning "No restic repository found at ${BACKUP_REMOTE_DIR}"
+        return 0
+    fi
+
+    # List snapshots
+    local snapshots=$(restic snapshots --json 2>/dev/null)
+
+    if [ -z "$snapshots" ] || [ "$snapshots" = "null" ] || [ "$snapshots" = "[]" ]; then
+        log_warning "No snapshots found in restic repository"
+        return 0
+    fi
+
+    echo ""
+    echo -e "${GREEN}Available snapshots:${NC}"
+    echo ""
+
+    # Parse and display snapshots with numbering
+    echo "$snapshots" | python3 -c "
+import sys, json
+try:
+    data = json.load(sys.stdin)
+    if not data:
+        print('No snapshots found')
+        sys.exit(0)
+
+    for idx, snap in enumerate(data, 1):
+        snap_id = snap.get('short_id', snap.get('id', '')[:8])
+        snap_time = snap.get('time', '')
+        snap_host = snap.get('hostname', '')
+        snap_paths = snap.get('paths', [])
+
+        print(f'  {idx}. \033[36m{snap_id}\033[0m  \033[33m{snap_time}\033[0m')
+        print(f'     Host: \033[32m{snap_host}\033[0m')
+        if snap_paths:
+            paths_preview = ', '.join(snap_paths[:3])
+            if len(snap_paths) > 3:
+                paths_preview += f' ... ({len(snap_paths)} total)'
+            print(f'     Paths: {paths_preview}')
+        print()
+except Exception as e:
+    print(f'Error parsing snapshots: {e}', file=sys.stderr)
+    sys.exit(1)
+"
+
+    if [ $? -eq 0 ]; then
+        echo -e "${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+        return 0
+    else
+        # Fallback to simple text output
+        restic snapshots 2>/dev/null
+        return 0
+    fi
+}
+
+# List available full backups
+list_full_backups() {
+    echo ""
+    echo -e "${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+    echo -e "${CYAN}Available Backups (Full)${NC}"
     echo -e "${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
 
     if ! command -v rclone &> /dev/null; then
@@ -55,11 +131,10 @@ list_backups() {
         return 1
     fi
 
-    # Only show .tar.gz.enc files (not .sha256), sorted in descending order (newest first)
     local backups=$(rclone lsl "${BACKUP_REMOTE_DIR}" 2>/dev/null | grep "backup-.*\.tar\.gz\.enc$" | sort -r)
 
     if [ -z "$backups" ]; then
-        log_warning "No backups found in ${BACKUP_REMOTE_DIR}"
+        log_warning "No full backups found in ${BACKUP_REMOTE_DIR}"
         return 0
     fi
 
@@ -72,18 +147,127 @@ list_backups() {
     echo -e "${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
 }
 
-# Download and decrypt backup
-restore_backup() {
+# Restore from restic snapshot
+restore_restic_snapshot() {
     echo ""
     echo -e "${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
-    echo -e "${CYAN}Restore Backup${NC}"
+    echo -e "${CYAN}Restore from Restic Snapshot${NC}"
     echo -e "${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
 
-    # List backups - only .tar.gz.enc files (not .sha256), sorted descending (newest first)
+    # Set up restic environment
+    export RESTIC_REPOSITORY="rclone:${BACKUP_REMOTE_DIR}"
+    export RESTIC_PASSWORD="${BACKUP_PASSWORD}"
+    export RCLONE_CONFIG="${RCLONE_CONFIG:-$HOME/.config/rclone/rclone.conf}"
+
+    # Get snapshots
+    local snapshots=$(restic snapshots --json 2>/dev/null)
+
+    if [ -z "$snapshots" ] || [ "$snapshots" = "null" ] || [ "$snapshots" = "[]" ]; then
+        log_error "No snapshots found"
+        return 1
+    fi
+
+    # Display snapshots with numbers
+    echo ""
+    echo -e "${GREEN}Available snapshots:${NC}"
+    echo ""
+
+    local snapshot_count=$(echo "$snapshots" | python3 -c "import sys,json; data=json.load(sys.stdin); print(len(data))")
+
+    echo "$snapshots" | python3 -c "
+import sys, json
+data = json.load(sys.stdin)
+for idx, snap in enumerate(data, 1):
+    snap_id = snap.get('short_id', snap.get('id', '')[:8])
+    snap_time = snap.get('time', '')
+    snap_host = snap.get('hostname', '')
+    print(f'  {idx}. \033[36m{snap_id}\033[0m  \033[33m{snap_time}\033[0m  Host: \033[32m{snap_host}\033[0m')
+"
+
+    echo ""
+    read -p "Select snapshot number to restore [1-${snapshot_count}] (or 'latest' for most recent): " selection
+
+    # Get snapshot ID
+    local snapshot_id=""
+    if [[ "$selection" == "latest" ]] || [[ "$selection" == "l" ]] || [[ -z "$selection" ]]; then
+        snapshot_id="latest"
+        log_info "Using latest snapshot"
+    elif [[ $selection =~ ^[0-9]+$ ]] && [ $selection -ge 1 ] && [ $selection -le $snapshot_count ]; then
+        snapshot_id=$(echo "$snapshots" | python3 -c "
+import sys, json
+data = json.load(sys.stdin)
+idx = int('$selection') - 1
+print(data[idx].get('short_id', data[idx].get('id', '')[:8]))
+")
+        log_info "Selected snapshot: $snapshot_id"
+    else
+        log_error "Invalid selection"
+        return 1
+    fi
+
+    # Ask for restore location
+    echo ""
+    read -p "Restore to directory [${RESTORE_DIR}] (press Enter for default): " restore_dir
+    restore_dir="${restore_dir:-$RESTORE_DIR}"
+
+    # Create restore directory
+    mkdir -p "$restore_dir"
+
+    # Show what will be restored
+    echo ""
+    log_info "Snapshot contents preview:"
+    restic ls "$snapshot_id" --long 2>/dev/null | head -20
+    echo "..."
+    echo ""
+
+    # Confirm restore
+    echo ""
+    log_warning "⚠️  WARNING: This will restore the backup snapshot"
+    log_warning "Restore location: $restore_dir"
+    echo ""
+    read -p "Continue? [y/N] (press Enter to cancel): " confirm
+
+    if [[ ! $confirm =~ ^[Yy]$ ]]; then
+        log_info "Restore cancelled"
+        return 0
+    fi
+
+    # Perform restore
+    echo ""
+    log_info "Restoring snapshot $snapshot_id to $restore_dir..."
+    echo ""
+
+    if restic restore "$snapshot_id" --target "$restore_dir" 2>&1 | tee /tmp/restic-restore.log; then
+        echo ""
+        log_success "Restore completed successfully!"
+        log_info "Restored files are in: $restore_dir"
+        echo ""
+        log_warning "Remember to:"
+        echo "  1. Verify the restored files"
+        echo "  2. Copy files to their original locations if needed"
+        echo "  3. Set correct permissions"
+        echo "  4. Restart services if necessary"
+        return 0
+    else
+        echo ""
+        log_error "Restore failed"
+        log_info "Check log: /tmp/restic-restore.log"
+        return 1
+    fi
+}
+
+# Download and decrypt full backup
+restore_full_backup() {
+    echo ""
+    echo -e "${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+    echo -e "${CYAN}Restore Full Backup${NC}"
+    echo -e "${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+
+    # List backups
     local backups=$(rclone lsf "${BACKUP_REMOTE_DIR}" 2>/dev/null | grep "backup-.*\.tar\.gz\.enc$" | sort -r)
 
     if [ -z "$backups" ]; then
-        log_error "No backups found"
+        log_error "No full backups found"
         return 1
     fi
 
@@ -99,7 +283,7 @@ restore_backup() {
 
     echo ""
     read -p "Select backup number to restore [1-${#backup_array[@]}] (press Enter for latest): " selection
-    selection="${selection:-1}"  # Default to 1 (latest backup)
+    selection="${selection:-1}"
 
     if ! [[ $selection =~ ^[0-9]+$ ]] || [ $selection -lt 1 ] || [ $selection -gt ${#backup_array[@]} ]; then
         log_error "Invalid selection"
@@ -228,95 +412,149 @@ verify_backup() {
     echo -e "${CYAN}Verify Backup Integrity${NC}"
     echo -e "${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
 
-    # List backups - only .tar.gz.enc files (not .sha256), sorted descending (newest first)
-    local backups=$(rclone lsf "${BACKUP_REMOTE_DIR}" 2>/dev/null | grep "backup-.*\.tar\.gz\.enc$" | sort -r)
-
-    if [ -z "$backups" ]; then
-        log_error "No backups found"
-        return 1
-    fi
-
-    echo ""
-    echo -e "${GREEN}Available backups:${NC}"
-    local count=1
-    local backup_array=()
-    while IFS= read -r backup; do
-        backup_array+=("$backup")
-        echo -e "  ${CYAN}$count.${NC} $backup"
-        count=$((count+1))
-    done <<< "$backups"
-
-    echo ""
-    read -p "Select backup to verify [1-${#backup_array[@]}] (press Enter for latest): " selection
-    selection="${selection:-1}"  # Default to 1 (latest backup)
-
-    if ! [[ $selection =~ ^[0-9]+$ ]] || [ $selection -lt 1 ] || [ $selection -gt ${#backup_array[@]} ]; then
-        log_error "Invalid selection"
-        return 1
-    fi
-
-    local selected_backup="${backup_array[$((selection-1))]}"
-
-    echo ""
-    log_info "Verifying: ${selected_backup}"
-
-    local temp_dir=$(mktemp -d)
-    local encrypted_file="${temp_dir}/${selected_backup}"
-
-    # Download
-    log_info "Downloading..."
-    rclone copy "${BACKUP_REMOTE_DIR}/${selected_backup}" "${temp_dir}/"
-
-    if [ $? -ne 0 ] || [ ! -f "$encrypted_file" ]; then
-        log_error "Download failed"
-        rm -rf "$temp_dir"
-        return 1
-    fi
-
-    # Try to decrypt (test only, don't save)
-    echo ""
-    log_info "Testing decryption..."
-
-    # Prompt for password
-    local test_pass=""
-    if [ -n "$BACKUP_PASSWORD" ]; then
+    if [ "$BACKUP_METHOD" = "incremental" ]; then
+        # Verify restic repository
         echo ""
-        echo -e "${GREEN}Password options:${NC}"
-        echo -e "  ${CYAN}1.${NC} Use configured password (default)"
-        echo -e "  ${CYAN}2.${NC} Enter password manually"
-        echo ""
-        read -p "Select [1-2] (press Enter for option 1): " pass_choice
-        pass_choice="${pass_choice:-1}"
+        log_info "Verifying restic repository..."
 
-        if [ "$pass_choice" = "1" ]; then
-            test_pass="$BACKUP_PASSWORD"
-            log_info "Using configured password"
-        elif [ "$pass_choice" = "2" ]; then
+        export RESTIC_REPOSITORY="rclone:${BACKUP_REMOTE_DIR}"
+        export RESTIC_PASSWORD="${BACKUP_PASSWORD}"
+        export RCLONE_CONFIG="${RCLONE_CONFIG:-$HOME/.config/rclone/rclone.conf}"
+
+        if ! command -v restic &> /dev/null; then
+            log_error "restic is not installed"
+            return 1
+        fi
+
+        echo ""
+        echo -e "${GREEN}Check types:${NC}"
+        echo -e "  ${CYAN}1.${NC} Quick check (metadata only) - Fast"
+        echo -e "  ${CYAN}2.${NC} Data check (verify pack files) - Slower"
+        echo -e "  ${CYAN}3.${NC} Full check (read all data) - Slowest but thorough"
+        echo ""
+        read -p "Select check type [1-3] (press Enter for option 1): " check_type
+        check_type="${check_type:-1}"
+
+        echo ""
+        case $check_type in
+            1)
+                log_info "Running quick check (metadata only)..."
+                restic check
+                ;;
+            2)
+                log_info "Running data check (with --read-data)..."
+                restic check --read-data
+                ;;
+            3)
+                log_info "Running full check (read all pack files)..."
+                restic check --read-data-subset=100%
+                ;;
+            *)
+                log_error "Invalid check type"
+                return 1
+                ;;
+        esac
+
+        if [ $? -eq 0 ]; then
+            echo ""
+            log_success "✓ Repository verification passed"
+        else
+            echo ""
+            log_error "✗ Repository verification failed"
+            return 1
+        fi
+
+    else
+        # Verify full backup file
+        local backups=$(rclone lsf "${BACKUP_REMOTE_DIR}" 2>/dev/null | grep "backup-.*\.tar\.gz\.enc$" | sort -r)
+
+        if [ -z "$backups" ]; then
+            log_error "No backups found"
+            return 1
+        fi
+
+        echo ""
+        echo -e "${GREEN}Available backups:${NC}"
+        local count=1
+        local backup_array=()
+        while IFS= read -r backup; do
+            backup_array+=("$backup")
+            echo -e "  ${CYAN}$count.${NC} $backup"
+            count=$((count+1))
+        done <<< "$backups"
+
+        echo ""
+        read -p "Select backup to verify [1-${#backup_array[@]}] (press Enter for latest): " selection
+        selection="${selection:-1}"
+
+        if ! [[ $selection =~ ^[0-9]+$ ]] || [ $selection -lt 1 ] || [ $selection -gt ${#backup_array[@]} ]; then
+            log_error "Invalid selection"
+            return 1
+        fi
+
+        local selected_backup="${backup_array[$((selection-1))]}"
+
+        echo ""
+        log_info "Verifying: ${selected_backup}"
+
+        local temp_dir=$(mktemp -d)
+        local encrypted_file="${temp_dir}/${selected_backup}"
+
+        # Download
+        log_info "Downloading..."
+        rclone copy "${BACKUP_REMOTE_DIR}/${selected_backup}" "${temp_dir}/"
+
+        if [ $? -ne 0 ] || [ ! -f "$encrypted_file" ]; then
+            log_error "Download failed"
+            rm -rf "$temp_dir"
+            return 1
+        fi
+
+        # Try to decrypt (test only, don't save)
+        echo ""
+        log_info "Testing decryption..."
+
+        # Prompt for password
+        local test_pass=""
+        if [ -n "$BACKUP_PASSWORD" ]; then
+            echo ""
+            echo -e "${GREEN}Password options:${NC}"
+            echo -e "  ${CYAN}1.${NC} Use configured password (default)"
+            echo -e "  ${CYAN}2.${NC} Enter password manually"
+            echo ""
+            read -p "Select [1-2] (press Enter for option 1): " pass_choice
+            pass_choice="${pass_choice:-1}"
+
+            if [ "$pass_choice" = "1" ]; then
+                test_pass="$BACKUP_PASSWORD"
+                log_info "Using configured password"
+            elif [ "$pass_choice" = "2" ]; then
+                echo ""
+                read -sp "Enter password: " test_pass
+                echo ""
+            else
+                log_error "Invalid option, using configured password"
+                test_pass="$BACKUP_PASSWORD"
+            fi
+        else
             echo ""
             read -sp "Enter password: " test_pass
             echo ""
-        else
-            log_error "Invalid option, using configured password"
-            test_pass="$BACKUP_PASSWORD"
         fi
-    else
-        echo ""
-        read -sp "Enter password: " test_pass
-        echo ""
+
+        openssl enc -aes-256-cbc -d -salt -pbkdf2 -pass pass:"$test_pass" \
+            -in "$encrypted_file" 2>/dev/null | tar -tz >/dev/null 2>&1
+
+        if [ $? -eq 0 ]; then
+            log_success "✓ Backup is valid and can be decrypted"
+            log_success "✓ Archive structure is intact"
+        else
+            log_error "✗ Backup verification failed"
+            log_error "File may be corrupted or password incorrect"
+        fi
+
+        rm -rf "$temp_dir"
     fi
-
-    openssl enc -aes-256-cbc -d -salt -pbkdf2 -pass pass:"$test_pass" \
-        -in "$encrypted_file" 2>/dev/null | tar -tz >/dev/null 2>&1
-
-    if [ $? -eq 0 ]; then
-        log_success "✓ Backup is valid and can be decrypted"
-        log_success "✓ Archive structure is intact"
-    else
-        log_error "✗ Backup verification failed"
-        log_error "File may be corrupted or password incorrect"
-    fi
-
-    rm -rf "$temp_dir"
 }
 
 # Main menu
@@ -330,10 +568,18 @@ main() {
 
     case "${1:-menu}" in
         list)
-            list_backups
+            if [ "$BACKUP_METHOD" = "incremental" ]; then
+                list_restic_snapshots
+            else
+                list_full_backups
+            fi
             ;;
         restore)
-            restore_backup
+            if [ "$BACKUP_METHOD" = "incremental" ]; then
+                restore_restic_snapshot
+            else
+                restore_full_backup
+            fi
             ;;
         verify)
             verify_backup
@@ -345,6 +591,8 @@ main() {
                 echo -e "${CYAN}VPS Backup Restore Tool${NC}"
                 echo -e "${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
                 echo ""
+                echo -e "${BLUE}Backup method: ${CYAN}${BACKUP_METHOD}${NC}"
+                echo ""
                 echo -e "${GREEN}Available actions:${NC}"
                 echo -e "  ${CYAN}1.${NC} List available backups"
                 echo -e "  ${CYAN}2.${NC} Restore backup"
@@ -352,11 +600,23 @@ main() {
                 echo -e "  ${CYAN}0.${NC} Exit (default)"
                 echo ""
                 read -p "Select action [0-3] (press Enter to exit): " action
-                action="${action:-0}"  # Default to option 0 (exit)
+                action="${action:-0}"
 
                 case $action in
-                    1) list_backups ;;
-                    2) restore_backup ;;
+                    1)
+                        if [ "$BACKUP_METHOD" = "incremental" ]; then
+                            list_restic_snapshots
+                        else
+                            list_full_backups
+                        fi
+                        ;;
+                    2)
+                        if [ "$BACKUP_METHOD" = "incremental" ]; then
+                            restore_restic_snapshot
+                        else
+                            restore_full_backup
+                        fi
+                        ;;
                     3) verify_backup ;;
                     0)
                         log_info "Exiting"
