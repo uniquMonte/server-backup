@@ -172,6 +172,37 @@ install_restic() {
     fi
 }
 
+# Install all dependencies (rclone and restic)
+install_dependencies() {
+    echo ""
+    log_info "Installing dependencies..."
+
+    local failed=false
+
+    # Install rclone
+    if ! command -v rclone &> /dev/null; then
+        install_rclone || failed=true
+    else
+        log_warning "rclone is already installed"
+    fi
+
+    # Install restic
+    if ! command -v restic &> /dev/null; then
+        install_restic || failed=true
+    else
+        log_warning "restic is already installed"
+    fi
+
+    echo ""
+    if [ "$failed" = true ]; then
+        log_error "Some dependencies failed to install"
+        return 1
+    else
+        log_success "All dependencies are installed"
+        return 0
+    fi
+}
+
 # Show current configuration status
 show_status() {
     echo ""
@@ -2498,7 +2529,7 @@ main() {
                         5) test_configuration ;;
                         6) edit_configuration ;;
                         7) configure_backup ;;
-                        8) install_rclone ;;
+                        8) install_dependencies ;;
                         9)
                             uninstall_backup
                             exit 0
