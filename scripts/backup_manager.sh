@@ -512,34 +512,38 @@ configure_backup_sources() {
                 continue
             fi
 
-        # Expand ~ to home directory
-        source="${source/#\~/$HOME}"
+            # Expand ~ to home directory
+            source="${source/#\~/$HOME}"
 
-        # Check if path exists
-        if [ -d "$source" ] || [ -f "$source" ]; then
-            new_sources+=("$source")
-            log_success "Added: $source"
-            counter=$((counter+1))
-        else
-            log_warning "Path does not exist: $source"
-            read -p "Add anyway? [y/N] (press Enter to skip): " add_anyway
-            if [[ $add_anyway =~ ^[Yy]$ ]]; then
+            # Check if path exists
+            if [ -d "$source" ] || [ -f "$source" ]; then
                 new_sources+=("$source")
-                log_info "Added: $source"
+                log_success "Added: $source"
                 counter=$((counter+1))
+            else
+                log_warning "Path does not exist: $source"
+                read -p "Add anyway? [y/N] (press Enter to skip): " add_anyway
+                if [[ $add_anyway =~ ^[Yy]$ ]]; then
+                    new_sources+=("$source")
+                    log_info "Added: $source"
+                    counter=$((counter+1))
+                fi
             fi
-        fi
-    done
+        done
+    fi
 
-    if [ ${#new_sources[@]} -eq 0 ]; then
-        if [ ${#sources[@]} -gt 0 ]; then
-            log_info "Keeping existing sources"
-        else
-            log_error "No backup sources configured"
-            return 1
-        fi
-    else
+    # Process final sources
+    local sources=()
+    if [ ${#new_sources[@]} -gt 0 ]; then
         sources=("${new_sources[@]}")
+    elif [ -n "$BACKUP_SRCS" ]; then
+        # Keep existing sources if no new ones added
+        IFS='|' read -ra sources <<< "$BACKUP_SRCS"
+    fi
+
+    if [ ${#sources[@]} -eq 0 ]; then
+        log_error "No backup sources configured"
+        return 1
     fi
 
     # Join array with |
