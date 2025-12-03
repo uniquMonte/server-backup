@@ -20,6 +20,17 @@ BACKUP_ENV="/usr/local/bin/vps-backup.env"
 DEFAULT_LOG_FILE="/var/log/vps-backup.log"
 DEFAULT_TMP_DIR="/tmp/vps-backups"
 
+# Recommended backup directories for typical VPS
+RECOMMENDED_BACKUP_DIRS=(
+    "/root"
+    "/etc"
+    "/home"
+    "/opt"
+    "/var/www"
+    "/var/spool"
+    "/usr/local"
+)
+
 # Determine scripts path for locating restore script
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 SCRIPTS_PATH="$SCRIPT_DIR"
@@ -407,36 +418,99 @@ configure_backup_sources() {
     fi
 
     echo ""
-    echo -e "${YELLOW}Common directories to backup:${NC}"
-    echo -e "  • /var/www/html (Web files)"
-    echo -e "  • /etc/nginx (Nginx config)"
-    echo -e "  • /etc/apache2 (Apache config)"
-    echo -e "  • /home (User home directories)"
-    echo -e "  • /opt (Optional software)"
-    echo -e "  • /root (Root home directory)"
-
+    echo -e "${GREEN}Select backup source configuration:${NC}"
+    echo -e "  ${GREEN}1.${NC} Use recommended directories (${CYAN}快速推荐${NC})"
+    echo -e "     ${YELLOW}Includes: /root, /etc, /home, /opt, /var/www, /var/spool, /usr/local${NC}"
+    echo -e "  ${CYAN}2.${NC} Add directories manually (自定义)"
     echo ""
-    log_info "Enter directories to backup (one per line)"
-    log_info "Press Enter on empty line to finish"
-    log_info "Enter 'clear' to clear all existing sources"
+    read -p "Select option [1-2] (press Enter for recommended): " src_choice
+    src_choice="${src_choice:-1}"
 
-    echo ""
     local new_sources=()
-    local counter=1
 
-    while true; do
-        read -p "Source #$counter: " source
+    if [ "$src_choice" = "1" ]; then
+        # Use recommended directories
+        echo ""
+        log_info "Using recommended backup directories..."
+        echo ""
 
-        if [ -z "$source" ]; then
-            break
+        for dir in "${RECOMMENDED_BACKUP_DIRS[@]}"; do
+            if [ -e "$dir" ]; then
+                local size=$(du -sh "$dir" 2>/dev/null | cut -f1)
+                echo -e "  ${GREEN}✓${NC} $dir ${CYAN}(${size})${NC}"
+                new_sources+=("$dir")
+            else
+                echo -e "  ${YELLOW}⚠${NC} $dir ${YELLOW}(not found, skipped)${NC}"
+            fi
+        done
+
+        echo ""
+        log_success "Added ${#new_sources[@]} recommended directories"
+
+        # Ask if user wants to add more
+        echo ""
+        read -p "Add additional custom directories? [y/N]: " add_more
+        if [[ $add_more =~ ^[Yy]$ ]]; then
+            echo ""
+            log_info "Enter additional directories (one per line, press Enter to finish)"
+            echo ""
+            local counter=1
+            while true; do
+                read -p "Additional source #$counter: " source
+                if [ -z "$source" ]; then
+                    break
+                fi
+
+                source="${source/#\~/$HOME}"
+
+                if [ -e "$source" ]; then
+                    new_sources+=("$source")
+                    log_success "Added: $source"
+                    counter=$((counter + 1))
+                else
+                    log_warning "Path does not exist: $source"
+                    read -p "Add anyway? [y/N]: " add_anyway
+                    if [[ $add_anyway =~ ^[Yy]$ ]]; then
+                        new_sources+=("$source")
+                        log_success "Added: $source"
+                        counter=$((counter + 1))
+                    fi
+                fi
+                echo ""
+            done
         fi
+    else
+        # Manual entry
+        echo ""
+        echo -e "${YELLOW}Common directories to backup:${NC}"
+        echo -e "  • /var/www (Web files)"
+        echo -e "  • /etc (System configuration)"
+        echo -e "  • /home (User home directories)"
+        echo -e "  • /opt (Optional software)"
+        echo -e "  • /root (Root home directory)"
+        echo -e "  • /usr/local (Local programs)"
 
-        if [ "$source" = "clear" ]; then
-            new_sources=()
-            log_info "All sources cleared"
-            counter=1
-            continue
-        fi
+        echo ""
+        log_info "Enter directories to backup (one per line)"
+        log_info "Press Enter on empty line to finish"
+        log_info "Enter 'clear' to clear all existing sources"
+
+        echo ""
+        local counter=1
+
+        while true; do
+            read -p "Source #$counter: " source
+
+            if [ -z "$source" ]; then
+                break
+            fi
+
+            if [ "$source" = "clear" ]; then
+                new_sources=()
+                log_info "All sources cleared"
+                counter=1
+                continue
+            fi
 
         # Expand ~ to home directory
         source="${source/#\~/$HOME}"
@@ -2175,14 +2249,41 @@ edit_configuration() {
 
                 echo ""
                 echo -e "${YELLOW}Options:${NC}"
-                echo -e "  a. Add new source"
-                echo -e "  r. Remove source"
-                echo -e "  c. Clear all and reconfigure"
-                echo -e "  b. Back"
+                echo -e "  ${GREEN}1.${NC} Use recommended directories (${CYAN}快速推荐${NC})"
+                echo -e "  ${CYAN}a.${NC} Add new source"
+                echo -e "  ${CYAN}r.${NC} Remove source"
+                echo -e "  ${CYAN}c.${NC} Clear all and reconfigure"
+                echo -e "  ${CYAN}b.${NC} Back"
                 echo ""
-                read -p "Select [a/r/c/b]: " src_action
+                read -p "Select [1/a/r/c/b]: " src_action
 
                 case $src_action in
+                    1)
+                        # Use recommended directories
+                        echo ""
+                        log_info "Using recommended backup directories..."
+                        echo ""
+
+                        SOURCES=()
+                        for dir in "${RECOMMENDED_BACKUP_DIRS[@]}"; do
+                            if [ -e "$dir" ]; then
+                                local size=$(du -sh "$dir" 2>/dev/null | cut -f1)
+                                echo -e "  ${GREEN}✓${NC} $dir ${CYAN}(${size})${NC}"
+                                SOURCES+=("$dir")
+                            else
+                                echo -e "  ${YELLOW}⚠${NC} $dir ${YELLOW}(not found, skipped)${NC}"
+                            fi
+                        done
+
+                        BACKUP_SRCS=$(IFS='|'; echo "${SOURCES[*]}")
+                        save_config
+                        create_backup_script
+                        echo ""
+                        log_success "Set to ${#SOURCES[@]} recommended directories"
+                        echo ""
+                        read -p "Press Enter to continue..."
+                        ;;
+
                     a|A)
                         echo ""
                         log_info "Add backup sources"
