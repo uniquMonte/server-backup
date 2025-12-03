@@ -1322,7 +1322,8 @@ FILES_NEW=$(echo "$BACKUP_OUTPUT" | grep "Files:" | sed -E 's/Files:[[:space:]]+
 FILES_CHANGED=$(echo "$BACKUP_OUTPUT" | grep "Files:" | sed -E 's/.*,[[:space:]]+([0-9]+) changed.*/\1/')
 FILES_UNCHANGED=$(echo "$BACKUP_OUTPUT" | grep "Files:" | sed -E 's/.*,[[:space:]]+([0-9]+) unmodified.*/\1/')
 DATA_ADDED=$(echo "$BACKUP_OUTPUT" | grep "Added to the repository:" | awk '{print $5, $6}')
-PROCESSED_SIZE=$(echo "$BACKUP_OUTPUT" | grep "processed" | awk '{print $(NF-2), $(NF-1)}')
+# Extract processed size: "processed 1954 files, 343.801 MiB in 0:23" -> "343.801 MiB"
+PROCESSED_SIZE=$(echo "$BACKUP_OUTPUT" | grep "processed" | sed -E 's/.*processed [0-9]+ files, ([0-9.]+ [A-Za-z]+) in.*/\1/')
 
 log_and_notify "Backup snapshot created successfully"
 
