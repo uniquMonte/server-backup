@@ -108,6 +108,70 @@ install_rclone() {
     fi
 }
 
+# Install restic
+install_restic() {
+    echo ""
+    log_info "Installing restic..."
+
+    if command -v restic &> /dev/null; then
+        log_warning "restic is already installed"
+        return 0
+    fi
+
+    # Detect architecture
+    local arch=$(uname -m)
+    local restic_arch=""
+
+    case "$arch" in
+        x86_64)
+            restic_arch="amd64"
+            ;;
+        aarch64|arm64)
+            restic_arch="arm64"
+            ;;
+        armv7l)
+            restic_arch="arm"
+            ;;
+        *)
+            log_error "Unsupported architecture: $arch"
+            return 1
+            ;;
+    esac
+
+    # Get latest version
+    log_info "Fetching latest restic version..."
+    local latest_version=$(curl -s https://api.github.com/repos/restic/restic/releases/latest | grep '"tag_name":' | sed -E 's/.*"v([^"]+)".*/\1/')
+
+    if [ -z "$latest_version" ]; then
+        log_error "Failed to fetch latest restic version"
+        return 1
+    fi
+
+    log_info "Downloading restic v${latest_version} for ${restic_arch}..."
+    local download_url="https://github.com/restic/restic/releases/download/v${latest_version}/restic_${latest_version}_linux_${restic_arch}.bz2"
+
+    cd /tmp
+    curl -L -o restic.bz2 "$download_url"
+
+    if [ $? -ne 0 ]; then
+        log_error "Failed to download restic"
+        return 1
+    fi
+
+    # Extract and install
+    bunzip2 restic.bz2
+    chmod +x restic
+    mv restic /usr/local/bin/
+
+    if command -v restic &> /dev/null; then
+        log_success "restic installed successfully (version: v${latest_version})"
+        return 0
+    else
+        log_error "Failed to install restic"
+        return 1
+    fi
+}
+
 # Show current configuration status
 show_status() {
     echo ""
@@ -122,6 +186,7 @@ show_status() {
     check_dependency "openssl" || deps_ok=false
     check_dependency "curl" || deps_ok=false
     check_dependency "rclone" || deps_ok=false
+    check_dependency "restic" || deps_ok=false
 
     echo ""
 
@@ -148,6 +213,7 @@ show_status() {
 
         echo ""
         echo -e "${GREEN}Configuration Details:${NC}"
+        echo -e "  Backup Method:     ${CYAN}${BACKUP_METHOD:-incremental}${NC}"
         echo -e "  Remote Directory:  ${CYAN}${BACKUP_REMOTE_DIR:-Not set}${NC}"
 
         # Check and display backup schedule
@@ -405,14 +471,62 @@ configure_backup() {
     # Load existing config if available
     load_config
 
-    # Step 1: Configure backup sources
+    # Step 1: Choose backup method
     echo ""
-    log_info "Step 1/8: Configure Backup Sources"
+    log_info "Step 1/9: Choose Backup Method"
+    echo ""
+    echo -e "${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+    echo -e "${CYAN}Select Backup Method${NC}"
+    echo -e "${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+    echo ""
+    echo -e "${GREEN}Choose the backup method for your VPS:${NC}"
+    echo ""
+    echo -e "  ${GREEN}1.${NC} ${GREEN}Incremental Backup (Recommended) - Using restic${NC}"
+    echo -e "     ${CYAN}• Only backs up changed data${NC}"
+    echo -e "     ${CYAN}• Faster backup and restore${NC}"
+    echo -e "     ${CYAN}• Efficient storage usage${NC}"
+    echo -e "     ${CYAN}• Automatic deduplication${NC}"
+    echo ""
+    echo -e "  ${CYAN}2.${NC} Full Backup - Using tar + openssl + rclone"
+    echo -e "     ${CYAN}• Complete backup every time${NC}"
+    echo -e "     ${CYAN}• Simple and reliable${NC}"
+    echo -e "     ${CYAN}• More storage space required${NC}"
+    echo ""
+
+    if [ -n "$BACKUP_METHOD" ]; then
+        local default_choice="1"
+        [ "$BACKUP_METHOD" = "full" ] && default_choice="2"
+        echo -e "Current method: ${CYAN}$BACKUP_METHOD${NC}"
+        read -p "Select backup method [1-2] (press Enter for incremental): " method_choice
+        method_choice="${method_choice:-$default_choice}"
+    else
+        read -p "Select backup method [1-2] (press Enter for incremental): " method_choice
+        method_choice="${method_choice:-1}"
+    fi
+
+    case $method_choice in
+        1)
+            BACKUP_METHOD="incremental"
+            log_success "Selected: Incremental backup (restic)"
+            ;;
+        2)
+            BACKUP_METHOD="full"
+            log_success "Selected: Full backup (tar + openssl)"
+            ;;
+        *)
+            log_error "Invalid choice, using incremental backup (default)"
+            BACKUP_METHOD="incremental"
+            ;;
+    esac
+
+    # Step 2: Configure backup sources
+    echo ""
+    log_info "Step 2/9: Configure Backup Sources"
     configure_backup_sources || return 1
 
-    # Step 2: Configure remote directory
+    # Step 3: Configure remote directory
     echo ""
-    log_info "Step 2/8: Configure Remote Storage"
+    log_info "Step 3/9: Configure Remote Storage"
     echo ""
 
     # First, configure hostname identifier for this VPS
@@ -630,9 +744,26 @@ configure_backup() {
         log_info "rclone not installed yet, will check after installation"
     fi
 
-    # Step 3: Setup rclone if needed
+    # Step 4: Setup rclone/restic if needed
     echo ""
-    log_info "Step 3/8: Configure Rclone"
+    if [ "$BACKUP_METHOD" = "incremental" ]; then
+        log_info "Step 4/9: Configure Restic"
+        # Check if restic is installed
+        if ! command -v restic &> /dev/null; then
+            log_warning "restic is not installed"
+            read -p "Install restic now? [Y/n] (press Enter to confirm): " install
+            if [[ ! $install =~ ^[Nn]$ ]]; then
+                install_restic || return 1
+            else
+                log_error "restic is required for incremental backup"
+                return 1
+            fi
+        else
+            log_success "restic is already installed ✓"
+        fi
+    else
+        log_info "Step 4/9: Configure Rclone"
+    fi
     local remote_name=$(echo "$BACKUP_REMOTE_DIR" | cut -d':' -f1)
     if command -v rclone &> /dev/null; then
         if rclone listremotes | grep -q "^${remote_name}:$"; then
@@ -652,9 +783,9 @@ configure_backup() {
         fi
     fi
 
-    # Step 4: Configure encryption password
+    # Step 5: Configure encryption password
     echo ""
-    log_info "Step 4/8: Configure Encryption"
+    log_info "Step 5/9: Configure Encryption"
     echo ""
     if [ -n "$BACKUP_PASSWORD" ]; then
         echo -e "Current password: ${CYAN}${BACKUP_PASSWORD:0:3}***${NC}"
@@ -682,9 +813,9 @@ configure_backup() {
         fi
     fi
 
-    # Step 5: Configure Telegram notifications (recommended)
+    # Step 6: Configure Telegram notifications (recommended)
     echo ""
-    log_info "Step 5/8: Configure Telegram Notifications (Recommended)"
+    log_info "Step 6/9: Configure Telegram Notifications (Recommended)"
     echo ""
     read -p "Enable Telegram notifications? [Y/n] (press Enter to enable): " enable_tg
     if [[ ! $enable_tg =~ ^[Nn]$ ]]; then
@@ -707,9 +838,9 @@ configure_backup() {
         TG_CHAT_ID=""
     fi
 
-    # Step 6: Other settings
+    # Step 7: Other settings
     echo ""
-    log_info "Step 6/8: Additional Settings"
+    log_info "Step 7/9: Additional Settings"
     echo ""
 
     read -p "Max backups to keep [${BACKUP_MAX_KEEP:-3}] (press Enter for default): " max_keep
@@ -729,9 +860,9 @@ configure_backup() {
     # Create backup script
     create_backup_script
 
-    # Step 7: Configure log rotation
+    # Step 8: Configure log rotation
     echo ""
-    log_info "Step 7/8: Configure Log Rotation"
+    log_info "Step 8/9: Configure Log Rotation"
     echo ""
     echo -e "${GREEN}Configure automatic log rotation to prevent disk space issues${NC}"
     echo ""
@@ -762,9 +893,9 @@ configure_backup() {
 
     setup_logrotate "$log_max_size" "$log_keep_days"
 
-    # Step 8: Configure automatic backup schedule
+    # Step 9: Configure automatic backup schedule
     echo ""
-    log_info "Step 8/8: Setup Automatic Backup Schedule"
+    log_info "Step 9/9: Setup Automatic Backup Schedule"
     echo ""
     echo -e "${GREEN}Would you like to enable automatic backups?${NC}"
     echo ""
@@ -881,6 +1012,9 @@ save_config() {
 # VPS identifier (hostname/label for this server)
 BACKUP_HOSTNAME="$BACKUP_HOSTNAME"
 
+# Backup method: incremental (restic) or full (tar+openssl)
+BACKUP_METHOD="${BACKUP_METHOD:-incremental}"
+
 # Backup sources (separated by |)
 BACKUP_SRCS="$BACKUP_SRCS"
 
@@ -906,6 +1040,193 @@ EOF
 
 # Create backup execution script
 create_backup_script() {
+    # Load config to determine backup method
+    load_config
+
+    if [ "$BACKUP_METHOD" = "incremental" ]; then
+        create_restic_backup_script
+    else
+        create_full_backup_script
+    fi
+}
+
+# Create restic incremental backup script
+create_restic_backup_script() {
+    cat > "$BACKUP_SCRIPT" << 'EOFSCRIPT'
+#!/bin/bash
+
+# Load configuration
+if [ ! -f "/usr/local/bin/vps-backup.env" ]; then
+    echo "Error: Configuration file not found"
+    exit 1
+fi
+
+source "/usr/local/bin/vps-backup.env"
+
+# Parse backup sources
+IFS='|' read -ra BACKUP_SRCS_ARRAY <<< "$BACKUP_SRCS"
+
+# Variables
+HOSTNAME=$(hostname)
+LOCK_FILE="/var/lock/vps-backup.lock"
+
+# Set restic environment
+export RESTIC_REPOSITORY="${BACKUP_REMOTE_DIR}"
+export RESTIC_PASSWORD="${BACKUP_PASSWORD}"
+
+# Cleanup function
+cleanup() {
+    local exit_code=$?
+    rm -f "$LOCK_FILE"
+    exit $exit_code
+}
+
+trap cleanup EXIT INT TERM
+
+# Functions
+send_telegram_message() {
+    local message="$1"
+    if [ -n "$TG_BOT_TOKEN" ] && [ -n "$TG_CHAT_ID" ]; then
+        curl -s -X POST "https://api.telegram.org/bot${TG_BOT_TOKEN}/sendMessage" \
+            --data-urlencode "chat_id=${TG_CHAT_ID}" \
+            --data-urlencode "text=${message}" \
+            --data-urlencode "parse_mode=HTML" > /dev/null 2>&1
+    fi
+}
+
+log_and_notify() {
+    local message="$1"
+    local is_error="${2:-false}"
+
+    echo "$(date): ${message}" >> "$BACKUP_LOG_FILE"
+
+    if [ "$is_error" = "true" ]; then
+        echo "ERROR: ${message}"
+        send_telegram_message "🖥️ <b>$HOSTNAME</b>
+❌ <b>Backup Error</b>
+${message}"
+        return 1
+    else
+        echo "INFO: ${message}"
+        return 0
+    fi
+}
+
+# Check if another backup is running
+if [ -f "$LOCK_FILE" ]; then
+    if kill -0 $(cat "$LOCK_FILE") 2>/dev/null; then
+        log_and_notify "Another backup process is already running (PID: $(cat "$LOCK_FILE"))" true
+        exit 1
+    else
+        # Stale lock file
+        rm -f "$LOCK_FILE"
+    fi
+fi
+
+# Create lock file
+echo $$ > "$LOCK_FILE"
+
+# Check disk space (need at least 1GB free)
+AVAILABLE_SPACE=$(df /tmp | tail -1 | awk '{print $4}')
+REQUIRED_SPACE=$((1024 * 1024))  # 1GB in KB
+
+if [ "$AVAILABLE_SPACE" -lt "$REQUIRED_SPACE" ]; then
+    log_and_notify "Insufficient disk space (available: $((AVAILABLE_SPACE/1024))MB, required: $((REQUIRED_SPACE/1024))MB)" true
+    exit 1
+fi
+
+# Start backup
+log_and_notify "Starting incremental backup process (restic)"
+
+# Initialize repository if it doesn't exist
+log_and_notify "Checking repository..."
+if ! restic snapshots &> /dev/null; then
+    log_and_notify "Initializing new restic repository..."
+    if ! restic init >> "$BACKUP_LOG_FILE" 2>&1; then
+        log_and_notify "Failed to initialize repository" true
+        exit 1
+    fi
+    log_and_notify "Repository initialized successfully"
+fi
+
+# Perform backup
+log_and_notify "Creating backup snapshot..."
+
+# Build backup arguments
+BACKUP_ARGS=()
+for SRC in "${BACKUP_SRCS_ARRAY[@]}"; do
+    if [ -e "$SRC" ]; then
+        BACKUP_ARGS+=("$SRC")
+    else
+        log_and_notify "Warning: Backup source does not exist - $SRC"
+    fi
+done
+
+# Run restic backup
+BACKUP_OUTPUT=$(restic backup "${BACKUP_ARGS[@]}" \
+    --tag "$HOSTNAME" \
+    --host "$HOSTNAME" 2>&1)
+BACKUP_RC=$?
+
+echo "$BACKUP_OUTPUT" >> "$BACKUP_LOG_FILE"
+
+if [ $BACKUP_RC -ne 0 ]; then
+    log_and_notify "Backup failed (restic exit code $BACKUP_RC)" true
+    exit 1
+fi
+
+# Extract stats from output
+FILES_NEW=$(echo "$BACKUP_OUTPUT" | grep "Files:" | awk '{print $3}' | head -1)
+FILES_CHANGED=$(echo "$BACKUP_OUTPUT" | grep "Files:" | awk '{print $5}' | head -1)
+FILES_UNCHANGED=$(echo "$BACKUP_OUTPUT" | grep "Files:" | awk '{print $7}' | head -1)
+DATA_ADDED=$(echo "$BACKUP_OUTPUT" | grep "Added to the repository:" | awk '{print $5, $6}')
+
+log_and_notify "Backup snapshot created successfully"
+
+# Cleanup old snapshots
+log_and_notify "Cleaning up old snapshots (keeping last ${BACKUP_MAX_KEEP})..."
+restic forget \
+    --keep-last "$BACKUP_MAX_KEEP" \
+    --host "$HOSTNAME" \
+    --prune >> "$BACKUP_LOG_FILE" 2>&1
+
+if [ $? -eq 0 ]; then
+    log_and_notify "Old snapshots cleaned up successfully"
+else
+    log_and_notify "Warning: Failed to cleanup old snapshots"
+fi
+
+# Get repository stats
+REPO_STATS=$(restic stats --json 2>/dev/null)
+TOTAL_SIZE=$(echo "$REPO_STATS" | grep -o '"total_size":[0-9]*' | cut -d':' -f2)
+if [ -n "$TOTAL_SIZE" ]; then
+    TOTAL_SIZE_MB=$((TOTAL_SIZE / 1024 / 1024))
+else
+    TOTAL_SIZE_MB="N/A"
+fi
+
+# Get snapshot count
+SNAPSHOT_COUNT=$(restic snapshots --json 2>/dev/null | grep -o '"hostname"' | wc -l)
+
+# Success notification
+send_telegram_message "🖥️ <b>$HOSTNAME Backup Completed</b>
+✅ Incremental backup successful
+📦 Data added: ${DATA_ADDED:-N/A}
+📊 Files: new=${FILES_NEW:-0}, changed=${FILES_CHANGED:-0}, unchanged=${FILES_UNCHANGED:-0}
+📚 Total snapshots: ${SNAPSHOT_COUNT}
+💾 Repository size: ${TOTAL_SIZE_MB}MB"
+
+log_and_notify "Backup process completed! Method: restic (incremental)"
+
+exit 0
+EOFSCRIPT
+
+    chmod +x "$BACKUP_SCRIPT"
+    log_success "Restic backup script created at $BACKUP_SCRIPT"
+}
+
+# Create full backup script (original tar+openssl method)
+create_full_backup_script() {
     cat > "$BACKUP_SCRIPT" << 'EOFSCRIPT'
 #!/bin/bash
 
@@ -1486,19 +1807,20 @@ edit_configuration() {
         echo ""
         echo -e "${GREEN}What do you want to modify?${NC}"
         echo -e "  ${CYAN}1.${NC} View current configuration"
-        echo -e "  ${CYAN}2.${NC} Backup sources (add/remove directories)"
-        echo -e "  ${CYAN}3.${NC} Backup retention (max backups)"
-        echo -e "  ${CYAN}4.${NC} Setup/modify backup schedule (cron)"
-        echo -e "  ${CYAN}5.${NC} VPS identifier (hostname/label)"
-        echo -e "  ${CYAN}6.${NC} Remote storage directory"
-        echo -e "  ${CYAN}7.${NC} Encryption password"
-        echo -e "  ${CYAN}8.${NC} Telegram notifications"
-        echo -e "  ${CYAN}9.${NC} Log and temp paths"
-        echo -e "  ${CYAN}10.${NC} Configure log rotation"
-        echo -e "  ${CYAN}11.${NC} Regenerate backup script"
+        echo -e "  ${CYAN}2.${NC} Backup method (incremental/full)"
+        echo -e "  ${CYAN}3.${NC} Backup sources (add/remove directories)"
+        echo -e "  ${CYAN}4.${NC} Backup retention (max backups)"
+        echo -e "  ${CYAN}5.${NC} Setup/modify backup schedule (cron)"
+        echo -e "  ${CYAN}6.${NC} VPS identifier (hostname/label)"
+        echo -e "  ${CYAN}7.${NC} Remote storage directory"
+        echo -e "  ${CYAN}8.${NC} Encryption password"
+        echo -e "  ${CYAN}9.${NC} Telegram notifications"
+        echo -e "  ${CYAN}10.${NC} Log and temp paths"
+        echo -e "  ${CYAN}11.${NC} Configure log rotation"
+        echo -e "  ${CYAN}12.${NC} Regenerate backup script"
         echo -e "  ${CYAN}0.${NC} Return to main menu (default)"
         echo ""
-        read -p "Select option [0-11] (press Enter to return): " edit_choice
+        read -p "Select option [0-12] (press Enter to return): " edit_choice
         edit_choice="${edit_choice:-0}"  # Default to option 0 (return to main menu)
 
         case $edit_choice in
@@ -1510,6 +1832,76 @@ edit_configuration() {
                 ;;
 
             2)
+                # Change backup method
+                echo ""
+                echo -e "${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+                echo -e "${CYAN}Change Backup Method${NC}"
+                echo -e "${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+                echo ""
+                echo -e "Current method: ${CYAN}${BACKUP_METHOD:-incremental}${NC}"
+                echo ""
+                echo -e "${GREEN}Available methods:${NC}"
+                echo -e "  ${GREEN}1.${NC} ${GREEN}Incremental (restic)${NC} - Only backs up changed data"
+                echo -e "  ${CYAN}2.${NC} Full (tar+openssl) - Complete backup every time"
+                echo ""
+                read -p "Select backup method [1-2]: " method_choice
+
+                case $method_choice in
+                    1)
+                        if [ "$BACKUP_METHOD" = "incremental" ]; then
+                            log_info "Already using incremental backup"
+                        else
+                            # Check if restic is installed
+                            if ! command -v restic &> /dev/null; then
+                                log_warning "restic is not installed"
+                                read -p "Install restic now? [Y/n]: " install_restic_now
+                                if [[ ! $install_restic_now =~ ^[Nn]$ ]]; then
+                                    install_restic
+                                    if [ $? -eq 0 ]; then
+                                        BACKUP_METHOD="incremental"
+                                        save_config
+                                        create_backup_script
+                                        log_success "Switched to incremental backup (restic)"
+                                        echo ""
+                                        log_warning "Note: Your existing full backups will remain in storage"
+                                        log_info "Restic will create a new repository for incremental backups"
+                                    fi
+                                else
+                                    log_error "restic is required for incremental backup"
+                                fi
+                            else
+                                BACKUP_METHOD="incremental"
+                                save_config
+                                create_backup_script
+                                log_success "Switched to incremental backup (restic)"
+                                echo ""
+                                log_warning "Note: Your existing full backups will remain in storage"
+                                log_info "Restic will create a new repository for incremental backups"
+                            fi
+                        fi
+                        ;;
+                    2)
+                        if [ "$BACKUP_METHOD" = "full" ]; then
+                            log_info "Already using full backup"
+                        else
+                            BACKUP_METHOD="full"
+                            save_config
+                            create_backup_script
+                            log_success "Switched to full backup (tar+openssl)"
+                            echo ""
+                            log_warning "Note: Your existing restic snapshots will remain in storage"
+                            log_info "Full backups will be stored as separate encrypted files"
+                        fi
+                        ;;
+                    *)
+                        log_error "Invalid choice"
+                        ;;
+                esac
+                echo ""
+                read -p "Press Enter to continue..."
+                ;;
+
+            3)
                 # Edit backup sources
                 echo ""
                 log_info "Current backup sources:"
@@ -1626,7 +2018,7 @@ edit_configuration() {
                 esac
                 ;;
 
-            3)
+            4)
                 # Edit max backups
                 echo ""
                 echo -e "Current max backups: ${CYAN}$BACKUP_MAX_KEEP${NC}"
@@ -1641,12 +2033,12 @@ edit_configuration() {
                 fi
                 ;;
 
-            4)
+            5)
                 # Setup cron
                 setup_cron
                 ;;
 
-            5)
+            6)
                 # Edit VPS identifier
                 echo ""
                 echo -e "Current VPS identifier: ${CYAN}$BACKUP_HOSTNAME${NC}"
@@ -1704,7 +2096,7 @@ edit_configuration() {
                 fi
                 ;;
 
-            6)
+            7)
                 # Edit remote directory
                 echo ""
                 echo -e "Current remote: ${CYAN}$BACKUP_REMOTE_DIR${NC}"
@@ -1717,7 +2109,7 @@ edit_configuration() {
                 fi
                 ;;
 
-            7)
+            8)
                 # Change encryption password
                 echo ""
                 log_warning "Changing password will not re-encrypt existing backups"
@@ -1735,7 +2127,7 @@ edit_configuration() {
                 fi
                 ;;
 
-            8)
+            9)
                 # Edit Telegram settings
                 echo ""
                 if [ -n "$TG_BOT_TOKEN" ] && [ -n "$TG_CHAT_ID" ]; then
@@ -1775,7 +2167,7 @@ edit_configuration() {
                 fi
                 ;;
 
-            9)
+            10)
                 # Edit paths
                 echo ""
                 echo -e "Current log file:  ${CYAN}$BACKUP_LOG_FILE${NC}"
@@ -1794,7 +2186,7 @@ edit_configuration() {
                 log_success "Paths updated"
                 ;;
 
-            10)
+            11)
                 # Configure log rotation
                 echo ""
                 echo -e "${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
@@ -1837,7 +2229,7 @@ edit_configuration() {
                 read -p "Press Enter to continue..."
                 ;;
 
-            11)
+            12)
                 # Regenerate backup script
                 echo ""
                 echo -e "${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
@@ -2004,7 +2396,33 @@ main() {
             edit_configuration
             ;;
         install-deps)
-            install_rclone
+            echo ""
+            echo -e "${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+            echo -e "${CYAN}Install Dependencies${NC}"
+            echo -e "${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+            echo ""
+            echo -e "${GREEN}Select dependencies to install:${NC}"
+            echo -e "  ${CYAN}1.${NC} rclone (required for full backup)"
+            echo -e "  ${CYAN}2.${NC} restic (required for incremental backup)"
+            echo -e "  ${CYAN}3.${NC} Both"
+            echo ""
+            read -p "Select [1-3]: " dep_choice
+
+            case $dep_choice in
+                1)
+                    install_rclone
+                    ;;
+                2)
+                    install_restic
+                    ;;
+                3)
+                    install_rclone
+                    install_restic
+                    ;;
+                *)
+                    log_error "Invalid choice"
+                    ;;
+            esac
             ;;
         regenerate)
             # Regenerate backup script with latest code
