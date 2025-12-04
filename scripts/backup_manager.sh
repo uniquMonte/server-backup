@@ -1275,6 +1275,10 @@ create_restic_backup_script() {
     cat > "$BACKUP_SCRIPT" << 'EOFSCRIPT'
 #!/bin/bash
 
+# Set PATH for cron compatibility
+# Ensures all common binary locations are accessible
+export PATH="/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
+
 # Load configuration
 if [ ! -f "/usr/local/bin/vps-backup.env" ]; then
     echo "Error: Configuration file not found"
@@ -1574,6 +1578,10 @@ EOFSCRIPT
 create_full_backup_script() {
     cat > "$BACKUP_SCRIPT" << 'EOFSCRIPT'
 #!/bin/bash
+
+# Set PATH for cron compatibility
+# Ensures all common binary locations are accessible
+export PATH="/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
 
 # Load configuration
 if [ ! -f "/usr/local/bin/vps-backup.env" ]; then
