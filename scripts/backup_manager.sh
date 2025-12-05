@@ -1343,6 +1343,61 @@ ${message}"
     fi
 }
 
+# Check and remove stale restic locks
+check_and_remove_stale_locks() {
+    local max_lock_age_hours=1
+
+    # Try to list locks (this doesn't require exclusive access)
+    local lock_info=$(restic list locks 2>&1)
+
+    if echo "$lock_info" | grep -q "unable to create lock"; then
+        log_and_notify "Detected repository lock, checking if stale..."
+
+        # Extract lock age from error message if available
+        # Error format: "lock was created at ... (XXhXXmXXs ago)"
+        local lock_age_text=$(echo "$lock_info" | grep -oP '\(\K[^)]+(?= ago\))' | head -1)
+
+        if [ -n "$lock_age_text" ]; then
+            log_and_notify "Lock age: $lock_age_text"
+
+            # Parse hours from lock age (format like "34h15m7.581189501s")
+            local lock_hours=$(echo "$lock_info" | grep -oP '\d+(?=h)' | head -1)
+            [ -z "$lock_hours" ] && lock_hours=0
+            local lock_minutes=$(echo "$lock_info" | grep -oP '\d+(?=m)' | head -1)
+            [ -z "$lock_minutes" ] && lock_minutes=0
+
+            # Convert to total hours for comparison
+            local total_hours=$(awk "BEGIN {printf \"%.0f\", $lock_hours + $lock_minutes / 60}")
+
+            if [ "$total_hours" -ge "$max_lock_age_hours" ]; then
+                log_and_notify "Lock is stale (${lock_age_text} old), removing it..."
+                if restic unlock >> "$BACKUP_LOG_FILE" 2>&1; then
+                    log_and_notify "Stale lock removed successfully"
+                    return 0
+                else
+                    log_and_notify "Failed to remove stale lock" true
+                    return 1
+                fi
+            else
+                log_and_notify "Lock is recent (${lock_age_text}), another backup may be running" true
+                return 1
+            fi
+        else
+            # If we can't determine the age but there's a lock error, try unlock anyway
+            log_and_notify "Could not determine lock age, attempting to unlock..."
+            if restic unlock >> "$BACKUP_LOG_FILE" 2>&1; then
+                log_and_notify "Lock removed successfully"
+                return 0
+            else
+                log_and_notify "Failed to remove lock" true
+                return 1
+            fi
+        fi
+    fi
+
+    return 0
+}
+
 # Check if another backup is running
 if [ -f "$LOCK_FILE" ]; then
     if kill -0 $(cat "$LOCK_FILE") 2>/dev/null; then
@@ -1428,6 +1483,9 @@ log_and_notify "Backup snapshot created successfully"
 # Cleanup old snapshots
 log_and_notify "Cleaning up old snapshots using retention policy..."
 
+# Check and remove stale locks before cleanup
+check_and_remove_stale_locks
+
 # Build restic forget command with retention policies
 FORGET_CMD="restic forget --host \"$HOSTNAME\" --prune"
 
@@ -1472,6 +1530,9 @@ CHECK_DURATION="N/A"
 
 if [ "${RESTIC_CHECK_ENABLED}" = "true" ]; then
     log_and_notify "Starting data integrity verification..."
+
+    # Check and remove stale locks before integrity check
+    check_and_remove_stale_locks
 
     # Determine check type based on day of month and week
     DAY_OF_MONTH=$(date +%d)
