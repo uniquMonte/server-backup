@@ -1344,58 +1344,80 @@ ${message}"
 }
 
 # Check and remove stale restic locks
-check_and_remove_stale_locks() {
+# This function wraps restic commands and retries with unlock if a stale lock is detected
+run_restic_with_lock_check() {
     local max_lock_age_hours=1
+    local cmd="$@"
 
-    # Try to list locks (this doesn't require exclusive access)
-    local lock_info=$(restic list locks 2>&1)
+    # First attempt
+    local output=$(eval "$cmd" 2>&1)
+    local rc=$?
 
-    if echo "$lock_info" | grep -q "unable to create lock"; then
-        log_and_notify "Detected repository lock, checking if stale..."
+    # If successful, return immediately
+    if [ $rc -eq 0 ]; then
+        echo "$output"
+        return 0
+    fi
 
-        # Extract lock age from error message if available
-        # Error format: "lock was created at ... (XXhXXmXXs ago)"
-        local lock_age_text=$(echo "$lock_info" | grep -oP '\(\K[^)]+(?= ago\))' | head -1)
+    # Check if failure is due to a lock
+    if echo "$output" | grep -q "unable to create lock in backend"; then
+        # Extract lock age from error message
+        local lock_age_text=$(echo "$output" | grep -oP 'lock was created at.*?\(\K[^)]+(?= ago\))' | head -1)
 
         if [ -n "$lock_age_text" ]; then
-            log_and_notify "Lock age: $lock_age_text"
+            log_and_notify "Detected repository lock (age: $lock_age_text)"
 
             # Parse hours from lock age (format like "34h15m7.581189501s")
-            local lock_hours=$(echo "$lock_info" | grep -oP '\d+(?=h)' | head -1)
+            local lock_hours=$(echo "$lock_age_text" | grep -oP '^\d+(?=h)' || echo "0")
             [ -z "$lock_hours" ] && lock_hours=0
-            local lock_minutes=$(echo "$lock_info" | grep -oP '\d+(?=m)' | head -1)
+            local lock_minutes=$(echo "$lock_age_text" | grep -oP '\d+(?=m)' || echo "0")
             [ -z "$lock_minutes" ] && lock_minutes=0
 
             # Convert to total hours for comparison
             local total_hours=$(awk "BEGIN {printf \"%.0f\", $lock_hours + $lock_minutes / 60}")
 
             if [ "$total_hours" -ge "$max_lock_age_hours" ]; then
-                log_and_notify "Lock is stale (${lock_age_text} old), removing it..."
+                log_and_notify "Lock is stale (${lock_age_text} old), removing and retrying..."
+
+                # Remove the stale lock
                 if restic unlock >> "$BACKUP_LOG_FILE" 2>&1; then
-                    log_and_notify "Stale lock removed successfully"
-                    return 0
+                    log_and_notify "Stale lock removed, retrying operation..."
+
+                    # Retry the original command
+                    output=$(eval "$cmd" 2>&1)
+                    rc=$?
+                    echo "$output"
+                    return $rc
                 else
                     log_and_notify "Failed to remove stale lock" true
+                    echo "$output"
                     return 1
                 fi
             else
                 log_and_notify "Lock is recent (${lock_age_text}), another backup may be running" true
+                echo "$output"
                 return 1
             fi
         else
-            # If we can't determine the age but there's a lock error, try unlock anyway
-            log_and_notify "Could not determine lock age, attempting to unlock..."
+            # Lock detected but can't determine age - try unlock anyway for safety
+            log_and_notify "Lock detected but age unknown, attempting to remove..."
             if restic unlock >> "$BACKUP_LOG_FILE" 2>&1; then
-                log_and_notify "Lock removed successfully"
-                return 0
+                log_and_notify "Lock removed, retrying operation..."
+                output=$(eval "$cmd" 2>&1)
+                rc=$?
+                echo "$output"
+                return $rc
             else
                 log_and_notify "Failed to remove lock" true
+                echo "$output"
                 return 1
             fi
         fi
     fi
 
-    return 0
+    # Not a lock error, return original output and status
+    echo "$output"
+    return $rc
 }
 
 # Check if another backup is running
@@ -1483,9 +1505,6 @@ log_and_notify "Backup snapshot created successfully"
 # Cleanup old snapshots
 log_and_notify "Cleaning up old snapshots using retention policy..."
 
-# Check and remove stale locks before cleanup
-check_and_remove_stale_locks
-
 # Build restic forget command with retention policies
 FORGET_CMD="restic forget --host \"$HOSTNAME\" --prune"
 
@@ -1495,10 +1514,13 @@ FORGET_CMD="restic forget --host \"$HOSTNAME\" --prune"
 [ -n "$RESTIC_KEEP_MONTHLY" ] && [ "$RESTIC_KEEP_MONTHLY" != "0" ] && FORGET_CMD="$FORGET_CMD --keep-monthly $RESTIC_KEEP_MONTHLY"
 [ -n "$RESTIC_KEEP_YEARLY" ] && [ "$RESTIC_KEEP_YEARLY" != "0" ] && FORGET_CMD="$FORGET_CMD --keep-yearly $RESTIC_KEEP_YEARLY"
 
-# Execute forget command
-eval "$FORGET_CMD" >> "$BACKUP_LOG_FILE" 2>&1
+# Execute forget command with automatic stale lock handling
+FORGET_OUTPUT=$(run_restic_with_lock_check "$FORGET_CMD")
+FORGET_RC=$?
 
-if [ $? -eq 0 ]; then
+echo "$FORGET_OUTPUT" >> "$BACKUP_LOG_FILE"
+
+if [ $FORGET_RC -eq 0 ]; then
     log_and_notify "Old snapshots cleaned up successfully"
 else
     log_and_notify "Warning: Failed to cleanup old snapshots"
@@ -1531,9 +1553,6 @@ CHECK_DURATION="N/A"
 if [ "${RESTIC_CHECK_ENABLED}" = "true" ]; then
     log_and_notify "Starting data integrity verification..."
 
-    # Check and remove stale locks before integrity check
-    check_and_remove_stale_locks
-
     # Determine check type based on day of month and week
     DAY_OF_MONTH=$(date +%d)
     DAY_OF_WEEK=$(date +%u)  # 1=Monday, 7=Sunday
@@ -1543,7 +1562,7 @@ if [ "${RESTIC_CHECK_ENABLED}" = "true" ]; then
         CHECK_TYPE="Full (monthly)"
         log_and_notify "Performing full data verification (monthly)..."
         CHECK_START=$(date +%s)
-        CHECK_OUTPUT=$(restic check --read-data 2>&1)
+        CHECK_OUTPUT=$(run_restic_with_lock_check "restic check --read-data")
         CHECK_RC=$?
         CHECK_END=$(date +%s)
         CHECK_DURATION=$((CHECK_END - CHECK_START))
@@ -1552,7 +1571,7 @@ if [ "${RESTIC_CHECK_ENABLED}" = "true" ]; then
         CHECK_TYPE="Partial (weekly)"
         log_and_notify "Performing partial data verification (weekly - 20% sample)..."
         CHECK_START=$(date +%s)
-        CHECK_OUTPUT=$(restic check --read-data-subset=20% 2>&1)
+        CHECK_OUTPUT=$(run_restic_with_lock_check "restic check --read-data-subset=20%")
         CHECK_RC=$?
         CHECK_END=$(date +%s)
         CHECK_DURATION=$((CHECK_END - CHECK_START))
@@ -1561,7 +1580,7 @@ if [ "${RESTIC_CHECK_ENABLED}" = "true" ]; then
         CHECK_TYPE="Quick (daily)"
         log_and_notify "Performing quick integrity check (daily)..."
         CHECK_START=$(date +%s)
-        CHECK_OUTPUT=$(restic check 2>&1)
+        CHECK_OUTPUT=$(run_restic_with_lock_check "restic check")
         CHECK_RC=$?
         CHECK_END=$(date +%s)
         CHECK_DURATION=$((CHECK_END - CHECK_START))
